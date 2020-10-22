@@ -121,7 +121,7 @@ void assemble_vector_usm(
     const dolfinx::graph::AdjacencyList<std::int32_t>& dm_index_b)
 {
   auto mesh = L.mesh();
-  auto dofmap = L.function_space(0)->dofmap();
+  auto dofmap = L.function_spaces().at(0)->dofmap();
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
 
   std::int32_t ncells = dofs.num_nodes();

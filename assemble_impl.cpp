@@ -123,7 +123,6 @@ void assemble_lhs(cl::sycl::queue& queue,
     cl::sycl::range<1> nelem_sycl{coord_dims[0]};
     int ncoeff = coeff_buf.get_range()[1];
     int gdim = 3;
-    std::cout << coord_dims[1];
 
     auto kern = [=](cl::sycl::id<1> wiID) {
       const int i = wiID[0];
