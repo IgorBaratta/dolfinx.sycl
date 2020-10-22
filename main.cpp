@@ -103,7 +103,7 @@ int main(int argc, char* argv[])
   auto timer_start = std::chrono::system_clock::now();
 
   double norm;
-  la::PETScVector u(*L->function_space(0)->dofmap()->index_map);
+  la::PETScVector u(*L->function_spaces()[0]->dofmap()->index_map);
   VecSet(u.vec(), 0);
   dolfinx::fem::assemble_vector_petsc(u.vec(), *L);
   VecGhostUpdateBegin(u.vec(), ADD_VALUES, SCATTER_REVERSE);

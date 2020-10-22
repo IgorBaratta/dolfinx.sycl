@@ -13,7 +13,7 @@ assemble_vector(cl::sycl::queue& queue, const dolfinx::fem::Form<double>& L,
                 const dolfinx::graph::AdjacencyList<std::int32_t>& dm_index_b)
 {
   auto mesh = L.mesh();
-  auto dofmap = L.function_space(0)->dofmap();
+  auto dofmap = L.function_spaces()[0]->dofmap();
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
 
   std::int32_t ndofs = dofmap->index_map->size_local();
@@ -67,7 +67,7 @@ assemble_matrix(cl::sycl::queue& queue, const dolfinx::fem::Form<double>& a,
 {
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap
-      = a.function_space(0)->dofmap();
+      = a.function_spaces()[0]->dofmap();
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
 
   int tdim = mesh->topology().dim();
