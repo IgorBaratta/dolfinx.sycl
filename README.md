@@ -2,7 +2,7 @@
 Simple code to assemble the Poisson equation on manycore architectures using Dolfinx and SYCL.
 
 ## Requirements:
-  - Dolfinx
+  - DOLFINX
   - A SYCL implementation
 
 ### Supported SYCL Implementations
