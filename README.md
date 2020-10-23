@@ -30,6 +30,7 @@ make -j8
 Building with CUDA and Nvidia Tesla P100 GPU accelerator:
 ```bash
 ffcx --sycl_defines=True poisson.ufl
+
 export HIPSYCL_PLATFORM=cuda
 export HIPSYCL_GPU_ARCH=sm_60
 
@@ -44,9 +45,9 @@ make -j8
 ```bash
 ffcx --sycl_defines=True poisson.ufl
 
-export ComputeCpp_DIR=/home/ia397/libraries/ComputeCpp-CE-2.1.0-x86_64-linux-gnu
-export OpenCL_INCLUDE_DIR=/home/ia397/libraries/llvm/build/include/sycl
-export OpenCL_LIBRARY=/home/ia397/libraries/llvm/build/lib/libOpenCL.so
+export ComputeCpp_DIR=/path/to/computecpp
+export OpenCL_INCLUDE_DIR=path/to/opencl/include
+export OpenCL_LIBRARY=/path/to/libOpenCL.so
 
 mkdir build
 cd build
