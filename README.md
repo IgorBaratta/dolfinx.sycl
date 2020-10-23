@@ -1,5 +1,18 @@
-## Dolfinx.SYCL
-Simple code to assemble the Poisson equation on manycore architectures using SYCL
+# Dolfinx.SYCL
+Simple code to assemble the Poisson equation on manycore architectures using Dolfinx and SYCL.
+
+## Requirements:
+  - Dolfinx
+  - A SYCL implementation
+
+### Supported SYCL Implementations
+
+Supported (tested) SYCL implementation:
+- hipSYCL
+- LLVM 
+- LLVM-CUDA
+- ComputeCpp
+
 
 ## Building
 
@@ -70,15 +83,6 @@ cd build
 cmake -DSYCL_IMPL=LLVM-CUDA -DCUDA_PATH=Release ..
 make -j8
 ```
-
-
-### Supported Implementations
-
-Supported (tested) SYCL implementation:
-- hipSYCL
-- LLVM 
-- LLVM-CUDA
-- ComputeCpp
 
 
 ## Runinng
