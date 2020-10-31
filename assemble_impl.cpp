@@ -203,6 +203,8 @@ void accumulate_lhs(cl::sycl::queue& queue, cl::sycl::buffer<double, 1>& A_buf,
   }
 }
 
+class AssemblyKernelUSM_b;
+
 void assemble_rhs_usm(cl::sycl::queue& queue, double* b, double* x,
                       int* cood_dm, double* coeff, int ncells, int ndofs,
                       int nelem_dofs)
@@ -227,7 +229,7 @@ void assemble_rhs_usm(cl::sycl::queue& queue, double* b, double* x,
       tabulate_cell_L(b + i * nelem_dofs, coeff + i * nelem_dofs, c, cell_geom,
                       nullptr, nullptr, 0);
     };
-    cgh.parallel_for<AssemblyKernel_b>(cl::sycl::range<1>{std::size_t(ncells)},
+    cgh.parallel_for<AssemblyKernelUSM_b>(cl::sycl::range<1>{std::size_t(ncells)},
                                        kern);
   });
 
