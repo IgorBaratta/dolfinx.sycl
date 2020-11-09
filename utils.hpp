@@ -111,17 +111,3 @@ void exception_handler(cl::sycl::exception_list exceptions)
     }
   }
 }
-
-//--------------------------------------------------------------------------
-// Eigen::Map<Eigen::SparseMatrix<double, Eigen::RowMajor>>
-void eigen_matrix(Eigen::VectorXd& data,
-                  const graph::AdjacencyList<std::int32_t>& dofmap0,
-                  const graph::AdjacencyList<std::int32_t>& dofmap1)
-{
-  int nrows = dofmap0.array().maxCoeff();
-  int ncols = dofmap1.array().maxCoeff();
-  int num_cells = dofmap0.num_nodes();
-
-  
-  std::cout << nrows << ", " << ncols << std::endl;
-}

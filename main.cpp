@@ -57,9 +57,6 @@ int main(int argc, char* argv[])
   auto a = dolfinx::fem::create_form<PetscScalar>(create_form_poisson_a, {V, V},
                                                   {}, {}, {});
 
-  Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coeff = fem::pack_coefficients(*L);
-
   // Select device to offload computation, default is implementation dependent
   cl::sycl::default_selector device_selector;
   cl::sycl::queue queue(device_selector, exception_handler, {});
