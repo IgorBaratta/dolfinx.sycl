@@ -15,7 +15,7 @@ using namespace dolfinx;
 
 // Simple code to assemble a dummy RHS vector over some dummy geometry and
 // dofmap
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
   common::SubSystemsManager::init_logging(argc, argv);
   common::SubSystemsManager::init_petsc(argc, argv);
@@ -40,14 +40,12 @@ int main(int argc, char* argv[])
                                      mesh);
 
   // Create dofmap permutation for insertion into array
-  const graph::AdjacencyList<std::int32_t>& v_dofmap = V->dofmap()->list();
-  const graph::AdjacencyList<std::int32_t> dm_index_b
-      = create_index_vec(v_dofmap);
-  const graph::AdjacencyList<std::int32_t> dm_index_A
-      = create_index_mat(v_dofmap, v_dofmap);
+  const graph::AdjacencyList<std::int32_t> &v_dofmap = V->dofmap()->list();
+  const graph::AdjacencyList<std::int32_t> dm_index_b = create_index_vec(v_dofmap);
+  const graph::AdjacencyList<std::int32_t> dm_index_A = create_index_mat(v_dofmap, v_dofmap);
 
   auto f = std::make_shared<function::Function<double>>(V);
-  f->interpolate([](auto& x) {
+  f->interpolate([](auto &x) {
     auto dx = Eigen::square(x - 0.5);
     return 10.0 * Eigen::exp(-(dx.row(0) + dx.row(1)) / 0.02);
   });
@@ -58,8 +56,7 @@ int main(int argc, char* argv[])
                                                   {}, {}, {});
 
   // Select device to offload computation, default is implementation dependent
-  cl::sycl::default_selector device_selector;
-  cl::sycl::queue queue(device_selector, exception_handler, {});
+  cl::sycl::queue queue(cl::sycl::cpu_selector(), exception_handler, {});
 
   // Print some information
   if (rank == 0)
@@ -75,6 +72,10 @@ int main(int argc, char* argv[])
   // SYCL Code
   //--------------------------
   {
+    {
+      // Compile SYCL code 
+      Eigen::VectorXd vec = assemble_vector(queue, *L, dm_index_b);
+    }
     auto timer_start = std::chrono::system_clock::now();
     Eigen::VectorXd vec = assemble_vector(queue, *L, dm_index_b);
     auto timer_end = std::chrono::system_clock::now();
