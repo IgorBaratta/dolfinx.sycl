@@ -32,11 +32,6 @@ void assemble_vector_ext(cl::sycl::queue& queue, double* b, double* x,
 
       // Get local values
       tabulate_cell_L(b + pos, coeff + pos, c, cell_geom, nullptr, nullptr, 0);
-
-      std::cout << std::setprecision(4);
-      for (int j = 0; j < nelem_dofs; j++)
-        std::cout << b[pos + j] << " ";
-      std::cout << std::endl;
     };
 
     cgh.parallel_for<class AssemblyKernelUSM_b>(range, kernel);

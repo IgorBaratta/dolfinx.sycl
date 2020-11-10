@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
     nx = std::stoi(argv[1]);
 
   auto cmap = fem::create_coordinate_map(create_coordinate_map_poisson);
-  std::array<Eigen::Vector3d, 2> pts{Eigen::Vector3d(-1.0, -1.0, -1.0),
+  std::array<Eigen::Vector3d, 2> pts{Eigen::Vector3d(0, 0, 0),
                                      Eigen::Vector3d(1.0, 1.0, 1.0)};
 
   auto mesh = std::make_shared<mesh::Mesh>(generation::BoxMesh::create(
@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
   });
   queue.wait_and_throw();
 
-  std::cout << b_host.norm();
+  std::cout << "\nVector norm " << b_host.norm() << "\n";
 
   return 0;
 }
