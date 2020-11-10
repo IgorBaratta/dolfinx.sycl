@@ -36,5 +36,13 @@ void assemble_vector_ext(cl::sycl::queue &queue, double *b, double *x,
     cgh.parallel_for<class AssemblyKernelUSM_b>(range, kernel);
   });
 
-  queue.wait_and_throw();
+  try
+  {
+    queue.wait_and_throw();
+  }
+  catch (cl::sycl::exception const &e)
+  {
+    std::cout << "Caught synchronous SYCL exception:\n"
+              << e.what() << std::endl;
+  }
 }
