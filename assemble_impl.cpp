@@ -30,8 +30,11 @@ void assemble_vector_ext(cl::sycl::queue& queue, double* b, double* x,
 
       const int pos = i * nelem_dofs;
 
+      for (int j = 0; j < nelem_dofs; j++)
+        b[pos + j] = 0.;
+
       // Get local values
-      tabulate_cell_L(b + pos, coeff + pos, c, cell_geom, nullptr, nullptr, 0);
+      tabulate_cell_L(&b[pos], &coeff[pos], c, cell_geom, nullptr, nullptr, 0);
     };
 
     cgh.parallel_for<class AssemblyKernelUSM_b>(range, kernel);
