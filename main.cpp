@@ -40,10 +40,17 @@ int main(int argc, char* argv[])
   auto V = fem::create_functionspace(create_functionspace_form_poisson_a, "u",
                                      mesh);
 
+  // auto f = std::make_shared<function::Function<double>>(V);
+  // f->interpolate([](auto& x) {
+  //   return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
+  //          * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI *
+  //          x.row(2));
+  // });
+
   auto f = std::make_shared<function::Function<double>>(V);
   f->interpolate([](auto& x) {
-    return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
-           * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
+    auto dx = Eigen::square(x - 0.5);
+    return 10.0 * Eigen::exp(-(dx.row(0) + dx.row(1)) / 0.02);
   });
 
   // Define variational forms
