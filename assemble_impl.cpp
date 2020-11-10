@@ -28,12 +28,43 @@ void assemble_vector_ext(cl::sycl::queue& queue, double* b, double* x,
           cell_geom[j * gdim + k] = x[dmi * gdim + k];
       }
 
+      const int pos = i * nelem_dofs;
+
       // Get local values
-      tabulate_cell_L(b + i * nelem_dofs, coeff + i * nelem_dofs, c, cell_geom,
-                      nullptr, nullptr, 0);
+      tabulate_cell_L(b + pos, coeff + pos, c, cell_geom, nullptr, nullptr, 0);
     };
 
     cgh.parallel_for<class AssemblyKernelUSM_b>(range, kernel);
+  });
+
+  try
+  {
+    queue.wait_and_throw();
+  }
+  catch (cl::sycl::exception const& e)
+  {
+    std::cout << "Caught synchronous SYCL exception:\n"
+              << e.what() << std::endl;
+  }
+}
+
+// Second kernel to accumulate RHS for each dof
+void accumulate_vector_impl(cl::sycl::queue& queue, double* b, double* b_ext,
+                            int* offsets, int* indices, int ndofs)
+{
+  cl::sycl::range<1> range{(std::size_t)ndofs};
+  cl::sycl::event event = queue.submit([&](cl::sycl::handler& cgh) {
+    auto kernel = [=](cl::sycl::id<1> ID) {
+      const int i = ID.get(0);
+
+      double val = 0.0;
+      for (int j = offsets[i]; j < offsets[i + 1]; ++j)
+        val += b_ext[indices[j]];
+
+      b[i] = val;
+    };
+
+    cgh.parallel_for<class AccumulationKernel_b>(range, kernel);
   });
 
   try

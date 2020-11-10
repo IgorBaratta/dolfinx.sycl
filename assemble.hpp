@@ -53,7 +53,7 @@ device_data_t send_data_to_device(cl::sycl::queue& queue,
   auto coeff_d = static_cast<double*>(
       cl::sycl::malloc_device(sizeof(double) * coeffs.size(), queue));
   queue.submit([&](cl::sycl::handler& h) {
-    h.memcpy(coeff_d, coeffs.data(), sizeof(std::int32_t) * coeffs.size());
+    h.memcpy(coeff_d, coeffs.data(), sizeof(double) * coeffs.size());
   });
 
   queue.wait();
@@ -65,11 +65,43 @@ device_data_t send_data_to_device(cl::sycl::queue& queue,
 double* assemble_vector(cl::sycl::queue& queue, device_data_t& data)
 {
   std::int32_t ndofs_ext = data.ndofs_cell * data.ncells;
-  auto b = (double*)cl::sycl::malloc_device(sizeof(double) * ndofs_ext, queue);
+  auto b_ext
+      = (double*)cl::sycl::malloc_device(sizeof(double) * ndofs_ext, queue);
 
-  assemble_vector_ext(queue, b, data.x, data.xdofs, data.coeffs, data.ncells,
-                      data.ndofs, data.ndofs_cell);
+  assemble_vector_ext(queue, b_ext, data.x, data.xdofs, data.coeffs,
+                      data.ncells, data.ndofs, data.ndofs_cell);
+
+  return b_ext;
+}
+
+// Submit vector assembly kernels to queue
+double*
+accumulate_vector(cl::sycl::queue& queue, double* b_ext, device_data_t& data,
+                  const dolfinx::graph::AdjacencyList<std::int32_t>& perm)
+{
+  std::int32_t ndofs = data.ndofs;
+  auto b = (double*)cl::sycl::malloc_device(sizeof(double) * ndofs, queue);
+
+  auto offsets
+      = (int*)cl::sycl::malloc_device(sizeof(int) * perm.num_nodes(), queue);
+  auto indices = (int*)cl::sycl::malloc_device(
+      sizeof(int) * perm.array().maxCoeff(), queue);
+
+  queue.submit([&](cl::sycl::handler& h) {
+    h.memcpy(offsets, perm.offsets().data(),
+             sizeof(std::int32_t) * perm.offsets().size());
+  });
+
+  queue.submit([&](cl::sycl::handler& h) {
+    h.memcpy(indices, perm.array().data(),
+             sizeof(std::int32_t) * perm.array().size());
+  });
+
+  queue.wait_and_throw();
+
+  accumulate_vector_impl(queue, b, b_ext, offsets, indices, data.ndofs);
 
   return b;
 }
+
 } // namespace dolfinx_sycl::assemble
