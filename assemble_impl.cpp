@@ -7,11 +7,11 @@
 // Need to include C file in same translation unit as lambda
 #include "poisson.c"
 
-void assemble_vector_ext(cl::sycl::queue &queue, double *b, double *x,
-                         int *x_coor, double *coeff, int ncells, int ndofs,
+void assemble_vector_ext(cl::sycl::queue& queue, double* b, double* x,
+                         int* x_coor, double* coeff, int ncells, int ndofs,
                          int nelem_dofs)
 {
-  cl::sycl::event event = queue.submit([&](cl::sycl::handler &cgh) {
+  cl::sycl::event event = queue.submit([&](cl::sycl::handler& cgh) {
     int gdim = 3;
     cl::sycl::range<1> range{std::size_t(ncells)};
 
@@ -40,7 +40,7 @@ void assemble_vector_ext(cl::sycl::queue &queue, double *b, double *x,
   {
     queue.wait_and_throw();
   }
-  catch (cl::sycl::exception const &e)
+  catch (cl::sycl::exception const& e)
   {
     std::cout << "Caught synchronous SYCL exception:\n"
               << e.what() << std::endl;

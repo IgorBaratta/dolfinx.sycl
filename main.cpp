@@ -4,8 +4,8 @@
 #include <dolfinx.h>
 #include <iomanip>
 #include <iostream>
-#include <numeric>
 #include <math.h>
+#include <numeric>
 
 #include "dolfinx_sycl.hpp"
 #include "poisson.h"
@@ -14,7 +14,7 @@ using namespace dolfinx;
 
 // Simple code to assemble a dummy RHS vector over some dummy geometry and
 // dofmap
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   common::SubSystemsManager::init_logging(argc, argv);
   common::SubSystemsManager::init_petsc(argc, argv);
@@ -41,9 +41,9 @@ int main(int argc, char *argv[])
                                      mesh);
 
   auto f = std::make_shared<function::Function<double>>(V);
-  f->interpolate([](auto &x) {
-    return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0)) *
-           Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
+  f->interpolate([](auto& x) {
+    return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
+           * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
   });
 
   // Define variational forms
@@ -64,27 +64,30 @@ int main(int argc, char *argv[])
   // TODO: Create SYCL kernel.
   auto timer_start = std::chrono::system_clock::now();
   // const graph::AdjacencyList<std::int32_t> &v_dofmap = V->dofmap()->list();
-  // const graph::AdjacencyList<std::int32_t> dm_index_b = dolfinx_sycl::la::create_index_vec(v_dofmap);
-  // const graph::AdjacencyList<std::int32_t> dm_index_A = dolfinx_sycl::la::create_index_mat(v_dofmap, v_dofmap);
+  // const graph::AdjacencyList<std::int32_t> dm_index_b =
+  // dolfinx_sycl::la::create_index_vec(v_dofmap); const
+  // graph::AdjacencyList<std::int32_t> dm_index_A =
+  // dolfinx_sycl::la::create_index_mat(v_dofmap, v_dofmap);
   auto timer_end = std::chrono::system_clock::now();
   timings["0 - Create Permutation"] = (timer_end - timer_start);
 
   // Send data to device
   timer_start = std::chrono::system_clock::now();
-  dolfinx_sycl::assemble::device_data_t data = dolfinx_sycl::assemble::send_data_to_device(queue, *L, *a);
+  dolfinx_sycl::assemble::device_data_t data
+      = dolfinx_sycl::assemble::send_data_to_device(queue, *L, *a);
   timer_end = std::chrono::system_clock::now();
   timings["1 - Transfer Data"] = (timer_end - timer_start);
 
   // Assemble Vector
   // Cells-wise contribution
   timer_start = std::chrono::system_clock::now();
-  double *b = dolfinx_sycl::assemble::assemble_vector(queue, data);
+  double* b = dolfinx_sycl::assemble::assemble_vector(queue, data);
   timer_end = std::chrono::system_clock::now();
   timings["2 - Assemble Vector"] = (timer_end - timer_start);
 
   Eigen::VectorXd b_host(data.ndofs_cell * data.ncells);
 
-  queue.submit([&](cl::sycl::handler &h) {
+  queue.submit([&](cl::sycl::handler& h) {
     h.memcpy(b_host.data(), b, sizeof(double) * b_host.size());
   });
   queue.wait_and_throw();
