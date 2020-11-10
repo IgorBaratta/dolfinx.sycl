@@ -1,113 +1,107 @@
+// Copyright (C) 2020 Igor A. Baratta
+// SPDX-License-Identifier:    MIT
+
 #include <CL/sycl.hpp>
+
 #include <dolfinx.h>
+#include <mpi.h>
 
 using namespace dolfinx;
 
-//--------------------------------------------------------------------------
-template <typename T>
-void print_device_info(T device)
+namespace dolfinx_sycl::utils
 {
-  std::cout
-      << "Running on "
-      << device.template get_info<cl::sycl::info::device::name>() << "\n"
-      << "Number of compute units: "
-      << device.template get_info<cl::sycl::info::device::max_compute_units>()
-      << "\n"
-      << "Driver version: "
-      << device.template get_info<cl::sycl::info::device::driver_version>()
-      << std::endl;
-}
-//--------------------------------------------------------------------------
-template <typename T>
-graph::AdjacencyList<std::int32_t> sort_and_offset(std::vector<T> indices)
-{
-  // Get the permutation which takes the entries into order
-  std::vector<int> perm(indices.size());
-  std::iota(perm.begin(), perm.end(), 0);
-  std::sort(perm.begin(), perm.end(), [&](const int& a, const int& b) {
-    return (indices[a] < indices[b]);
-  });
-
-  // Compute offsets for each entry
-  std::vector<int> offset = {0};
-  T last = indices[perm[0]];
-  for (std::size_t i = 0; i < perm.size(); ++i)
+  //--------------------------------------------------------------------------
+  void exception_handler(cl::sycl::exception_list exceptions)
   {
-    int idx = perm[i];
-    const T& current = indices[idx];
-    if (current != last)
-      offset.push_back(i);
-    last = current;
-  }
-  offset.push_back(perm.size());
-
-  return graph::AdjacencyList<std::int32_t>(perm, offset);
-}
-//--------------------------------------------------------------------------
-graph::AdjacencyList<std::int32_t>
-create_index_mat(const graph::AdjacencyList<std::int32_t>& dofmap0,
-                 const graph::AdjacencyList<std::int32_t>& dofmap1)
-{
-  // CSR format for Matrix
-  // Creates a layout and offsets to move data from the assembly order into the
-  // dof order
-
-  assert(dofmap0.num_nodes() == dofmap1.num_nodes());
-
-  const int ncells = dofmap0.num_nodes();
-  std::vector<std::array<int, 2>> indices;
-  const int nelem_dofs0 = dofmap0.num_links(0);
-  const int nelem_dofs1 = dofmap1.num_links(0);
-  indices.reserve(ncells * nelem_dofs0 * nelem_dofs1);
-
-  // Iterate through all indices in assembly order
-  for (int i = 0; i < ncells; ++i)
-  {
-    auto dofs0 = dofmap0.links(i);
-    auto dofs1 = dofmap1.links(i);
-    for (int j = 0; j < nelem_dofs0; ++j)
+    for (std::exception_ptr const &e : exceptions)
     {
-      for (int k = 0; k < nelem_dofs1; ++k)
-        indices.push_back({dofs0[j], dofs1[k]});
+      try
+      {
+        std::rethrow_exception(e);
+      }
+      catch (cl::sycl::exception const &e)
+      {
+        std::cout << "Caught asynchronous SYCL exception:\n"
+                  << e.what() << std::endl;
+      }
     }
   }
 
-  return sort_and_offset(indices);
-}
-//--------------------------------------------------------------------------
-graph::AdjacencyList<std::int32_t>
-create_index_vec(const graph::AdjacencyList<std::int32_t>& dofmap)
-{
-  int ncells = dofmap.num_nodes();
-  int nelem_dofs = dofmap.links(0).size();
-  std::vector<int> indices;
-  indices.reserve(ncells * nelem_dofs);
-
-  // Stack up indices in assembly order
-  for (int i = 0; i < ncells; ++i)
+  //--------------------------------------------------------------------------
+  /// heuristic to select device
+  cl::sycl::queue select_queue(MPI_Comm comm)
   {
-    const auto dofs = dofmap.links(i);
-    for (int j = 0; j < nelem_dofs; ++j)
-      indices.push_back(dofs[j]);
+    int mpi_size, mpi_rank;
+    MPI_Comm_size(comm, &mpi_size);
+    MPI_Comm_rank(comm, &mpi_rank);
+
+    std::vector<cl::sycl::device> gpus;
+    auto platforms = cl::sycl::platform::get_platforms();
+    for (auto &p : platforms)
+    {
+      auto devices = p.get_devices();
+      for (auto &device : devices)
+        if (device.is_gpu())
+          gpus.push_back(device);
+    }
+
+    int num_devices = gpus.size();
+    if (num_devices >= mpi_size)
+      return cl::sycl::queue(gpus[mpi_rank], exception_handler, {});
+    else
+      return cl::sycl::queue(cl::sycl::cpu_selector(), exception_handler, {});
   }
 
-  // Get the permutation that sorts them into dof order
-  return sort_and_offset(indices);
-}
-
-//--------------------------------------------------------------------------
-void exception_handler(cl::sycl::exception_list exceptions)
-{
-  for (std::exception_ptr const& e : exceptions)
+  //--------------------------------------------------------------------------
+  template <typename T>
+  void print_device_info(T device)
   {
-    try
+    std::cout
+        << "Running on "
+        << device.template get_info<cl::sycl::info::device::name>() << "\n"
+        << "Number of compute units: "
+        << device.template get_info<cl::sycl::info::device::max_compute_units>()
+        << "\n"
+        << "Driver version: "
+        << device.template get_info<cl::sycl::info::device::driver_version>()
+        << std::endl;
+  }
+
+  //--------------------------------------------------------------------------
+  void print_function_space_info(const std::shared_ptr<dolfinx::function::FunctionSpace> &V)
+  {
+    const auto &mesh = V->mesh();
+    int tdim = mesh->topology().dim();
+    std::cout << "\nNumber of cells: "
+              << mesh->topology().index_map(tdim)->size_global() << std::endl;
+    std::cout << "Number of dofs: " << V->dofmap()->index_map->size_global()
+              << std::endl;
+  }
+
+  //--------------------------------------------------------------------------
+  void print_timing_info(MPI_Comm mpi_comm, const std::map<std::string, std::chrono::duration<double>> &timings)
+  {
+    int mpi_size, mpi_rank;
+    MPI_Comm_size(mpi_comm, &mpi_size);
+    MPI_Comm_rank(mpi_comm, &mpi_rank);
+
+    if (mpi_rank == 0)
+      std::cout
+          << "\nTimings (" << mpi_size
+          << ")\n----------------------------\n";
+    for (auto q : timings)
     {
-      std::rethrow_exception(e);
-    }
-    catch (cl::sycl::exception const& e)
-    {
-      std::cout << "Caught asynchronous SYCL exception:\n"
-                << e.what() << std::endl;
+      double q_local = q.second.count(), q_max, q_min;
+      MPI_Reduce(&q_local, &q_max, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+      MPI_Reduce(&q_local, &q_min, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+
+      if (mpi_rank == 0)
+      {
+        std::string pad(32 - q.first.size(), ' ');
+        std::cout << "[" << q.first << "]" << pad << q_min << '\t' << q_max
+                  << "\n";
+      }
     }
   }
-}
+
+} // namespace dolfinx_sycl::utils
