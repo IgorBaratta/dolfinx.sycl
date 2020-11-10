@@ -55,8 +55,24 @@ int main(int argc, char *argv[])
   auto a = dolfinx::fem::create_form<PetscScalar>(create_form_poisson_a, {V, V},
                                                   {}, {}, {});
 
-  // Select device to offload computation, default is implementation dependent
-  cl::sycl::queue queue(cl::sycl::cpu_selector(), exception_handler, {});
+  
+  std::vector<cl::sycl::device> gpus;
+  auto platforms = cl::sycl::platform::get_platforms();
+  for (auto &p : platforms)
+  {
+    auto devices = p.get_devices();
+    for (auto &device : devices)
+      if (device.is_gpu())
+        gpus.push_back(device);
+  }
+
+  cl::sycl::queue queue;
+
+  int num_devices = gpus.size();
+  if (num_devices >= mpi_size)
+    queue = cl::sycl::queue(gpus[rank], exception_handler, {});
+  else
+    queue = cl::sycl::queue(cl::sycl::cpu_selector(), exception_handler, {});
 
   // Print some information
   if (rank == 0)
@@ -72,10 +88,6 @@ int main(int argc, char *argv[])
   // SYCL Code
   //--------------------------
   {
-    {
-      // Compile SYCL code 
-      Eigen::VectorXd vec = assemble_vector(queue, *L, dm_index_b);
-    }
     auto timer_start = std::chrono::system_clock::now();
     Eigen::VectorXd vec = assemble_vector(queue, *L, dm_index_b);
     auto timer_end = std::chrono::system_clock::now();
@@ -98,31 +110,34 @@ int main(int argc, char *argv[])
 
   // Comparison CPU code below
   //--------------------------
-  auto timer_start = std::chrono::system_clock::now();
-
-  double norm;
-  la::PETScVector u(*L->function_spaces()[0]->dofmap()->index_map);
-  VecSet(u.vec(), 0);
-  dolfinx::fem::assemble_vector_petsc(u.vec(), *L);
-  VecGhostUpdateBegin(u.vec(), ADD_VALUES, SCATTER_REVERSE);
-  VecGhostUpdateEnd(u.vec(), ADD_VALUES, SCATTER_REVERSE);
-  VecNorm(u.vec(), NORM_2, &norm);
-  auto timer_end = std::chrono::system_clock::now();
-  std::chrono::duration<double> dt_L = (timer_end - timer_start);
-
-  la::PETScMatrix A = fem::create_matrix(*a);
-  MatZeroEntries(A.mat());
-  timer_start = std::chrono::system_clock::now();
-  fem::assemble_matrix(la::PETScMatrix::add_fn(A.mat()), *a, {});
-  timer_end = std::chrono::system_clock::now();
-  std::chrono::duration<double> dt_a = (timer_end - timer_start);
-
-  if (rank == 0)
+  if (num_devices >= mpi_size)
   {
-    std::cout << "\nPETSc" << std::endl;
-    std::cout << "Assemble Vector(s) " << dt_L.count() << "\n";
-    std::cout << "Assemble Matrix(s) " << dt_a.count() << "\n";
-    std::cout << "Vector norm " << norm << "\n";
+    auto timer_start = std::chrono::system_clock::now();
+
+    double norm;
+    la::PETScVector u(*L->function_spaces()[0]->dofmap()->index_map);
+    VecSet(u.vec(), 0);
+    dolfinx::fem::assemble_vector_petsc(u.vec(), *L);
+    VecGhostUpdateBegin(u.vec(), ADD_VALUES, SCATTER_REVERSE);
+    VecGhostUpdateEnd(u.vec(), ADD_VALUES, SCATTER_REVERSE);
+    VecNorm(u.vec(), NORM_2, &norm);
+    auto timer_end = std::chrono::system_clock::now();
+    std::chrono::duration<double> dt_L = (timer_end - timer_start);
+
+    la::PETScMatrix A = fem::create_matrix(*a);
+    MatZeroEntries(A.mat());
+    timer_start = std::chrono::system_clock::now();
+    fem::assemble_matrix(la::PETScMatrix::add_fn(A.mat()), *a, {});
+    timer_end = std::chrono::system_clock::now();
+    std::chrono::duration<double> dt_a = (timer_end - timer_start);
+
+    if (rank == 0)
+    {
+      std::cout << "\nPETSc" << std::endl;
+      std::cout << "Assemble Vector(s) " << dt_L.count() << "\n";
+      std::cout << "Assemble Matrix(s) " << dt_a.count() << "\n";
+      std::cout << "Vector norm " << norm << "\n";
+    }
   }
 
   return 0;
