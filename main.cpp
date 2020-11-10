@@ -55,7 +55,6 @@ int main(int argc, char *argv[])
   auto a = dolfinx::fem::create_form<PetscScalar>(create_form_poisson_a, {V, V},
                                                   {}, {}, {});
 
-  
   std::vector<cl::sycl::device> gpus;
   auto platforms = cl::sycl::platform::get_platforms();
   for (auto &p : platforms)
@@ -85,58 +84,80 @@ int main(int argc, char *argv[])
               << std::endl;
   }
 
-  // SYCL Code
-  //--------------------------
-  {
-    auto timer_start = std::chrono::system_clock::now();
-    Eigen::VectorXd vec = assemble_vector(queue, *L, dm_index_b);
-    auto timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_L = (timer_end - timer_start);
+  // Keep list of timings
+  std::map<std::string, std::chrono::duration<double>> timings;
 
-    timer_start = std::chrono::system_clock::now();
-    Eigen::VectorXd data = assemble_matrix(queue, *a, dm_index_A);
-    timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_a = (timer_end - timer_start);
+  // =========================== //
+  // Send data to device
+
+  // Get geometry data
+  auto timer_start = std::chrono::system_clock::now();
+  const auto &geometry = mesh->geometry().x();
+  auto x_d = static_cast<double *>(
+      cl::sycl::malloc_device(sizeof(double) * geometry.size(), queue));
+  queue.submit([&](cl::sycl::handler &h) {
+    h.memcpy(x_d, geometry.data(), sizeof(double) * geometry.size());
+  });
+  queue.wait();
+  auto timer_end = std::chrono::system_clock::now();
+  timings["0 - Geometry"] = (timer_end - timer_start);
+
+  timer_start = std::chrono::system_clock::now();
+  const dolfinx::graph::AdjacencyList<std::int32_t> &dofs = L->function_spaces()[0]->dofmap()->list();
+  auto b_d = static_cast<double *>(
+      cl::sycl::malloc_device(sizeof(double) * dofs.array().size(), queue));
+  timer_end = std::chrono::system_clock::now();
+  timings["1 - Vector"] = (timer_end - timer_start);
+
+  const auto &x_dofmap = mesh->geometry().dofmap().array();
+  timer_start = std::chrono::system_clock::now();
+  auto x_dofs_d = static_cast<std::int32_t *>(
+      cl::sycl::malloc_device(sizeof(std::int32_t) * x_dofmap.size(), queue));
+  queue.submit([&](cl::sycl::handler &h) {
+    h.memcpy(x_dofs_d, x_dofmap.data(), sizeof(std::int32_t) * x_dofmap.size());
+  });
+  queue.wait();
+  timer_end = std::chrono::system_clock::now();
+  timings["2 - Geom Dofmap"] = (timer_end - timer_start);
+
+  Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      coeffs = dolfinx::fem::pack_coefficients(*L);
+
+  timer_start = std::chrono::system_clock::now();
+  auto coeff_d = static_cast<double *>(
+      cl::sycl::malloc_device(sizeof(double) * coeffs.size(), queue));
+  queue.submit([&](cl::sycl::handler &h) {
+    h.memcpy(coeff_d, coeffs.data(), sizeof(std::int32_t) * coeffs.size());
+  });
+  queue.wait();
+  timer_end = std::chrono::system_clock::now();
+  timings["3 - Coefficients"] = (timer_end - timer_start);
+
+  std::int32_t ncells = dofs.num_nodes();
+  std::int32_t ndofs = V->dofmap()->index_map->size_local();
+  std::int32_t nghost_dofs = V->dofmap()->index_map->num_ghosts();
+  ndofs = ndofs + nghost_dofs;
+  int nelem_dofs = dofs.num_links(0);
+
+  timer_start = std::chrono::system_clock::now();
+  assemble_rhs_usm(queue, b_d, x_d, x_dofs_d, coeff_d, ncells, ndofs, nelem_dofs);
+  timer_end = std::chrono::system_clock::now();
+  timings["4 - Assemble RHS"] = (timer_end - timer_start);
+
+  if (rank == 0)
+    std::cout << "\nTimings (" << mpi_size
+              << ")\n----------------------------\n";
+  for (auto q : timings)
+  {
+    double q_local = q.second.count(), q_max, q_min;
+    MPI_Reduce(&q_local, &q_max, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&q_local, &q_min, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
 
     if (rank == 0)
     {
-      std::cout << "\nSYCL" << std::endl;
-
-      std::cout << "Assemble Vector(s) " << dt_L.count() << "\n";
-      std::cout << "Assemble Matrix (s) " << dt_a.count() << "\n";
-      std::cout << "Vector norm " << vec.norm() << "\n";
-    }
-  }
-
-  // Comparison CPU code below
-  //--------------------------
-  if (num_devices >= mpi_size)
-  {
-    auto timer_start = std::chrono::system_clock::now();
-
-    double norm;
-    la::PETScVector u(*L->function_spaces()[0]->dofmap()->index_map);
-    VecSet(u.vec(), 0);
-    dolfinx::fem::assemble_vector_petsc(u.vec(), *L);
-    VecGhostUpdateBegin(u.vec(), ADD_VALUES, SCATTER_REVERSE);
-    VecGhostUpdateEnd(u.vec(), ADD_VALUES, SCATTER_REVERSE);
-    VecNorm(u.vec(), NORM_2, &norm);
-    auto timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_L = (timer_end - timer_start);
-
-    la::PETScMatrix A = fem::create_matrix(*a);
-    MatZeroEntries(A.mat());
-    timer_start = std::chrono::system_clock::now();
-    fem::assemble_matrix(la::PETScMatrix::add_fn(A.mat()), *a, {});
-    timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_a = (timer_end - timer_start);
-
-    if (rank == 0)
-    {
-      std::cout << "\nPETSc" << std::endl;
-      std::cout << "Assemble Vector(s) " << dt_L.count() << "\n";
-      std::cout << "Assemble Matrix(s) " << dt_a.count() << "\n";
-      std::cout << "Vector norm " << norm << "\n";
+      std::string pad(32 - q.first.size(), ' ');
+      std::cout << "[" << q.first << "]" << pad << q_min << '\t' << q_max
+                << "\n";
     }
   }
 
