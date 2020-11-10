@@ -13,9 +13,10 @@ void assemble_vector_ext(cl::sycl::queue &queue, double *b, double *x,
 {
   cl::sycl::event event = queue.submit([&](cl::sycl::handler &cgh) {
     int gdim = 3;
-    auto kern = [=](cl::sycl::id<1> ID) {
-      const int i = ID[0];
+    cl::sycl::range<1> range{std::size_t(ncells)};
 
+    auto kernel = [=](cl::sycl::id<1> ID) {
+      const int i = ID.get(0);
       double cell_geom[12];
       double c[32] = {0};
 
@@ -31,8 +32,8 @@ void assemble_vector_ext(cl::sycl::queue &queue, double *b, double *x,
       tabulate_cell_L(b + i * nelem_dofs, coeff + i * nelem_dofs, c, cell_geom,
                       nullptr, nullptr, 0);
     };
-    cgh.parallel_for<class AssemblyKernelUSM_b>(cl::sycl::range<1>{std::size_t(ncells)},
-                                                kern);
+
+    cgh.parallel_for<class AssemblyKernelUSM_b>(range, kernel);
   });
 
   queue.wait_and_throw();
