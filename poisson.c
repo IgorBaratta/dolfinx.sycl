@@ -19,13 +19,15 @@
 
 
 typedef double ufc_scalar_t;
-#define restrict __restrict__
 #include <math.h>
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ufc.h>
+
+#define restrict __restrict__ 
+
 #define space_dimension_element_3d50d284335ebc4b177a4e50d69ae334909fee4d 4
 
 // Code for element element_3d50d284335ebc4b177a4e50d69ae334909fee4d
@@ -383,6 +385,7 @@ ufc_finite_element* create_element_3d50d284335ebc4b177a4e50d69ae334909fee4d(void
 }
 
 // End of code for element element_3d50d284335ebc4b177a4e50d69ae334909fee4d
+
 #define space_dimension_element_7fe73a8e5817bcc77c2cee5cf1074fd1ed41ed3e 12
 
 // Code for element element_7fe73a8e5817bcc77c2cee5cf1074fd1ed41ed3e
@@ -765,6 +768,7 @@ ufc_finite_element* create_element_7fe73a8e5817bcc77c2cee5cf1074fd1ed41ed3e(void
 }
 
 // End of code for element element_7fe73a8e5817bcc77c2cee5cf1074fd1ed41ed3e
+
 #define space_dimension_element_0a5aeec74c03428a9a0cef4c980b0ad984414b71 20
 
 // Code for element element_0a5aeec74c03428a9a0cef4c980b0ad984414b71

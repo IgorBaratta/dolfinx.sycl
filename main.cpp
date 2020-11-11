@@ -96,6 +96,9 @@ int main(int argc, char* argv[])
   timer_start = std::chrono::system_clock::now();
   double* b = dolfinx_sycl::assemble::accumulate_vector(queue, b_ext, data,
                                                         dm_index_vec);
+
+  cl::sycl::free(b_ext, queue);
+
   timer_end = std::chrono::system_clock::now();
   timings["3 - Vector Accumulate"] = (timer_end - timer_start);
 
@@ -113,6 +116,8 @@ int main(int argc, char* argv[])
     h.memcpy(b_host.data(), b, sizeof(double) * b_host.size());
   });
   queue.wait_and_throw();
+
+  cl::sycl::free(A, queue);
 
   std::cout << "\nVector norm " << b_host.norm() << "\n";
 
