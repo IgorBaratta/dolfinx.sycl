@@ -99,6 +99,13 @@ int main(int argc, char* argv[])
   timer_end = std::chrono::system_clock::now();
   timings["3 - Vector Accumulate"] = (timer_end - timer_start);
 
+  // Assemble Matrix
+  // Cells-wise contribution
+  timer_start = std::chrono::system_clock::now();
+  double* A = dolfinx_sycl::assemble::assemble_matrix(queue, data);
+  timer_end = std::chrono::system_clock::now();
+  timings["4 - Assemble Matrix"] = (timer_end - timer_start);
+
   dolfinx_sycl::utils::print_timing_info(mpi_comm, timings);
 
   Eigen::VectorXd b_host(data.ndofs);
