@@ -15,10 +15,12 @@ void assemble_vector_impl(cl::sycl::queue& queue, double* b, double* x,
     int gdim = 3;
     cl::sycl::range<1> range{std::size_t(ncells)};
 
+    constexpr int ndofs_cell = SPACE_DIMENSION;
+
     auto kernel = [=](cl::sycl::id<1> ID) {
       const int i = ID.get(0);
       double cell_geom[12];
-      double c[32] = {0};
+      double c[ndofs_cell] = {0};
 
       // Pull out points for this cell
       for (std::size_t j = 0; j < 4; ++j)
@@ -85,10 +87,14 @@ void assemble_matrix_impl(cl::sycl::queue& queue, double* A, double* x,
     int gdim = 3;
     cl::sycl::range<1> range{std::size_t(ncells)};
 
+    constexpr int ndofs_cell = SPACE_DIMENSION;
+
     auto kernel = [=](cl::sycl::id<1> ID) {
       const int i = ID.get(0);
       double cell_geom[12];
-      double c[40] = {0};
+
+      double c[ndofs_cell] = {0};
+      double Ae[ndofs_cell * ndofs_cell] = {0};
 
       // Pull out points for this cell
       for (std::size_t j = 0; j < 4; ++j)

@@ -126,6 +126,8 @@ double* assemble_matrix(cl::sycl::queue& queue, device_data_t& data)
     h.fill<double>(A_ext, fill_value, ext_size);
   });
 
+  queue.wait_and_throw();
+
   assemble_matrix_impl(queue, A_ext, data.x, data.xdofs, data.coeffs_a,
                        data.ncells, data.ndofs, data.ndofs_cell);
 
