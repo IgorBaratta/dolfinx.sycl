@@ -15,7 +15,7 @@ void assemble_vector_impl(cl::sycl::queue& queue, double* b, double* x,
     int gdim = 3;
     cl::sycl::range<1> range{std::size_t(ncells)};
 
-    constexpr int ndofs_cell = SPACE_DIMENSION;
+    constexpr int ndofs_cell = L_num_dofs;
 
     auto kernel = [=](cl::sycl::id<1> ID) {
       const int i = ID.get(0);
@@ -87,7 +87,7 @@ void assemble_matrix_impl(cl::sycl::queue& queue, double* A, double* x,
     int gdim = 3;
     cl::sycl::range<1> range{std::size_t(ncells)};
 
-    constexpr int ndofs_cell = SPACE_DIMENSION;
+    constexpr int ndofs_cell = a_num_dofs;
 
     auto kernel = [=](cl::sycl::id<1> ID) {
       const int i = ID.get(0);
