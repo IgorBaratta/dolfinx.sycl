@@ -73,9 +73,8 @@ int main(int argc, char* argv[])
   const graph::AdjacencyList<std::int32_t>& v_dofmap = V->dofmap()->list();
   const graph::AdjacencyList<std::int32_t> dm_index_vec
       = dolfinx_sycl::la::create_index_vec(v_dofmap);
-  // const
-  // graph::AdjacencyList<std::int32_t> dm_index_A =
-  // dolfinx_sycl::la::create_index_mat(v_dofmap, v_dofmap);
+  const graph::AdjacencyList<std::int32_t> dm_index_A
+      = dolfinx_sycl::la::create_index_mat(v_dofmap, v_dofmap);
   auto timer_end = std::chrono::system_clock::now();
   timings["0 - Create Permutation"] = (timer_end - timer_start);
 
@@ -103,14 +102,13 @@ int main(int argc, char* argv[])
   timings["3 - Vector Accumulate"] = (timer_end - timer_start);
 
   // Assemble Matrix
-  // Cells-wise contribution
+  // Cells-wise contributions
   timer_start = std::chrono::system_clock::now();
   double* A = dolfinx_sycl::assemble::assemble_matrix(queue, data);
   timer_end = std::chrono::system_clock::now();
   timings["4 - Assemble Matrix"] = (timer_end - timer_start);
 
   dolfinx_sycl::utils::print_timing_info(mpi_comm, timings);
-
   Eigen::VectorXd b_host(data.ndofs);
   queue.submit([&](cl::sycl::handler& h) {
     h.memcpy(b_host.data(), b, sizeof(double) * b_host.size());
