@@ -92,8 +92,10 @@ accumulate_vector(cl::sycl::queue& queue, double* b_ext, device_data_t& data,
   std::int32_t ndofs = data.ndofs;
 
   auto b = cl::sycl::malloc_device<double>(ndofs, queue);
-  auto offsets = cl::sycl::malloc_device<int>(perm.num_nodes(), queue);
-  auto indices = cl::sycl::malloc_device<int>(perm.array().size(), queue);
+  std::size_t offset_size = perm.offsets().size();
+  std::size_t indices_size = perm.array().size();
+  auto offsets = cl::sycl::malloc_device<std::int32_t>(offset_size, queue);
+  auto indices = cl::sycl::malloc_device<std::int32_t>(indices_size, queue);
 
   queue.submit([&](cl::sycl::handler& h) {
     h.memcpy(offsets, perm.offsets().data(),
@@ -125,7 +127,7 @@ double* assemble_matrix(cl::sycl::queue& queue, device_data_t& data)
   });
 
   assemble_matrix_impl(queue, A_ext, data.x, data.xdofs, data.coeffs_a,
-                      data.ncells, data.ndofs, data.ndofs_cell);
+                       data.ncells, data.ndofs, data.ndofs_cell);
 
   return A_ext;
 }
