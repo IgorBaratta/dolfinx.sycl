@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
     nx = std::stoi(argv[1]);
 
   auto cmap = fem::create_coordinate_map(create_coordinate_map_poisson);
-  std::array<Eigen::Vector3d, 2> pts{Eigen::Vector3d(0, 0, 0),
+  std::array<Eigen::Vector3d, 2> pts{Eigen::Vector3d(-1, -1, -1),
                                      Eigen::Vector3d(1.0, 1.0, 1.0)};
 
   auto mesh = std::make_shared<mesh::Mesh>(generation::BoxMesh::create(
@@ -40,17 +40,10 @@ int main(int argc, char* argv[])
   auto V = fem::create_functionspace(create_functionspace_form_poisson_a, "u",
                                      mesh);
 
-  // auto f = std::make_shared<function::Function<double>>(V);
-  // f->interpolate([](auto& x) {
-  //   return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
-  //          * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI *
-  //          x.row(2));
-  // });
-
   auto f = std::make_shared<function::Function<double>>(V);
   f->interpolate([](auto& x) {
-    auto dx = Eigen::square(x - 0.5);
-    return 10.0 * Eigen::exp(-(dx.row(0) + dx.row(1)) / 0.02);
+    return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
+           * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
   });
 
   // Define variational forms

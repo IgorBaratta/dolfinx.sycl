@@ -105,10 +105,12 @@ void assemble_matrix_impl(cl::sycl::queue& queue, double* A, double* x,
       }
 
       // Get local values
-      const int pos_A = i * nelem_dofs * nelem_dofs;
       const int pos_c = i * nelem_dofs;
-      tabulate_cell_a(&A[pos_A], &coeff[pos_c], c, cell_geom, nullptr, nullptr,
-                      0);
+      tabulate_cell_a(Ae, &coeff[pos_c], c, cell_geom, nullptr, nullptr, 0);
+
+      const int pos_A = i * nelem_dofs * nelem_dofs;
+      for (int j = 0; j < nelem_dofs * nelem_dofs; j++)
+        A[pos_A + j] = Ae[j];
     };
 
     cgh.parallel_for<class AssemblyKernelUSM_A>(range, kernel);
