@@ -98,4 +98,41 @@ create_index_vec(const graph::AdjacencyList<std::int32_t>& dofmap)
   // Get the permutation that sorts them into dof order
   return sort_and_offset(indices);
 }
+
+struct coo_pattern_t
+{
+  std::vector<std::int32_t> rows;
+  std::vector<std::int32_t> cols;
+};
+
+coo_pattern_t coo_pattern(const graph::AdjacencyList<std::int32_t>& dofmap0,
+                          const graph::AdjacencyList<std::int32_t>& dofmap1)
+{
+  int ncells = dofmap0.num_nodes();
+  const int nelem_dofs0 = dofmap0.num_links(0);
+  const int nelem_dofs1 = dofmap1.num_links(0);
+
+  std::vector<std::int32_t> rows;
+  std::vector<std::int32_t> cols;
+
+  rows.reserve(ncells * nelem_dofs0 * nelem_dofs1);
+  cols.reserve(ncells * nelem_dofs0 * nelem_dofs1);
+
+  for (int i = 0; i < ncells; ++i)
+  {
+    auto dofs0 = dofmap0.links(i);
+    auto dofs1 = dofmap1.links(i);
+    for (int j = 0; j < nelem_dofs0; ++j)
+    {
+      for (int k = 0; k < nelem_dofs1; ++k)
+      {
+        rows.push_back(dofs0[j]);
+        cols.push_back(dofs1[k]);
+      }
+    }
+  }
+
+  return {rows, cols};
+}
+
 } // namespace dolfinx_sycl::la
