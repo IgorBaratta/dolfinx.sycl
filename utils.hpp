@@ -49,7 +49,7 @@ cl::sycl::queue select_queue(MPI_Comm comm)
   if (num_devices >= mpi_size)
     return cl::sycl::queue(gpus[mpi_rank], exception_handler, {});
   else
-    return cl::sycl::queue(cl::sycl::cpu_selector(), exception_handler, {});
+    return cl::sycl::queue(cl::sycl::host_selector(), exception_handler, {});
 }
 
 //--------------------------------------------------------------------------

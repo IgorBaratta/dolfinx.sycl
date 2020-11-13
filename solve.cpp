@@ -3,12 +3,13 @@
 #include "solve.hpp"
 
 void dolfinx_sycl::solve(double* A, double* b, double* x,
-                         std::vector<std::int32_t> coo_rows,
-                         std::vector<std::int32_t> coo_cols, int ndofs)
+                         std::int32_t* coo_rows, std::int32_t* coo_cols,
+                         std::int32_t stored_nz, int ndofs)
 {
   // auto exec = gko::DpcppExecutor::create(0,
   // gko::ReferenceExecutor::create());
-  auto exec = gko::OmpExecutor::create();
+  //   auto exec = gko::CudaExecutor(0, gko::OmpExecutor::create(), true);
+  auto exec = gko::ReferenceExecutor::create();
 
   // Create Vector
   auto b_view = gko::Array<double>::view(exec, ndofs, b);
@@ -17,12 +18,10 @@ void dolfinx_sycl::solve(double* A, double* b, double* x,
 
   using mtx = gko::matrix::Coo<double, std::int32_t>;
 
-  std::int32_t values_size = coo_rows.size();
-  auto values = gko::Array<double>::view(exec, values_size, A);
-  auto rows
-      = gko::Array<std::int32_t>::view(exec, values_size, coo_rows.data());
-  auto cols
-      = gko::Array<std::int32_t>::view(exec, values_size, coo_cols.data());
+  auto values = gko::Array<double>::view(exec, stored_nz, A);
+  
+  auto rows = gko::Array<std::int32_t>::view(exec, stored_nz, coo_rows);
+  auto cols = gko::Array<std::int32_t>::view(exec, stored_nz, coo_cols);
   auto matrix = mtx::create(exec, gko::dim<2>(ndofs), values, rows, cols);
 
   auto x_view = gko::Array<double>::view(exec, ndofs, x);

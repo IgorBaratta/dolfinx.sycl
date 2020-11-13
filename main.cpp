@@ -65,9 +65,7 @@ int main(int argc, char* argv[])
   const graph::AdjacencyList<std::int32_t>& v_dofmap = V->dofmap()->list();
   const graph::AdjacencyList<std::int32_t> dm_index_vec
       = dolfinx_sycl::la::create_index_vec(v_dofmap);
-  // const graph::AdjacencyList<std::int32_t> dm_index_A
-  //     = dolfinx_sycl::la::create_index_mat(v_dofmap, v_dofmap);
-  auto coo_pattern = dolfinx_sycl::la::coo_pattern(v_dofmap, v_dofmap);
+  auto coo_pattern = dolfinx_sycl::la::coo_pattern(queue, v_dofmap);
   auto timer_end = std::chrono::system_clock::now();
   timings["0 - Create Permutation"] = (timer_end - timer_start);
 
@@ -101,20 +99,20 @@ int main(int argc, char* argv[])
   timer_end = std::chrono::system_clock::now();
   timings["4 - Assemble Matrix"] = (timer_end - timer_start);
 
-  Eigen::VectorXd b_host(data.ndofs);
-  queue.submit([&](cl::sycl::handler& h) {
-    h.memcpy(b_host.data(), b, sizeof(double) * b_host.size());
-  });
-  queue.wait_and_throw();
-
   auto x = cl::sycl::malloc_device<double>(data.ndofs, queue);
-
   timer_start = std::chrono::system_clock::now();
-  dolfinx_sycl::solve(A, b, x, coo_pattern.rows, coo_pattern.cols, data.ndofs);
+  dolfinx_sycl::solve(A, b, x, coo_pattern.rows, coo_pattern.cols,
+                      coo_pattern.store_nz, data.ndofs);
   timer_end = std::chrono::system_clock::now();
   timings["5 - Solve System"] = (timer_end - timer_start);
 
   dolfinx_sycl::utils::print_timing_info(mpi_comm, timings);
+
+  Eigen::VectorXd x_host(data.ndofs);
+  queue.memcpy(x_host.data(), x, sizeof(double) * x_host.size()).wait();
+  std::cout << x_host.norm();
+
+  std::cout << x_host.norm();
 
   cl::sycl::free(A, queue);
   cl::sycl::free(b, queue);
