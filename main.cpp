@@ -2,8 +2,6 @@
 
 #include <Eigen/Dense>
 #include <dolfinx.h>
-#include <ginkgo/ginkgo.hpp>
-#include <iomanip>
 #include <iostream>
 #include <math.h>
 #include <numeric>
@@ -109,59 +107,14 @@ int main(int argc, char* argv[])
   });
   queue.wait_and_throw();
 
-  // auto exec = gko::DpcppExecutor::create(0,
-  // gko::ReferenceExecutor::create());
-  auto exec = gko::OmpExecutor::create();
-
-  // Create Vector
-  auto b_view = gko::Array<double>::view(exec, data.ndofs, b);
-  auto vec = gko::matrix::Dense<double>::create(
-      exec, gko::dim<2>(data.ndofs, 1), b_view, 1);
-
-  using mtx = gko::matrix::Coo<double, std::int32_t>;
-
-  std::int32_t values_size = data.ndofs_cell * data.ndofs_cell * data.ncells;
-  auto values = gko::Array<double>::view(exec, values_size, A);
-  auto rows = gko::Array<std::int32_t>::view(exec, values_size,
-                                             coo_pattern.rows.data());
-  auto cols = gko::Array<std::int32_t>::view(exec, values_size,
-                                             coo_pattern.cols.data());
-  auto matrix = mtx::create(exec, gko::dim<2>(data.ndofs), values, rows, cols);
-
   auto x = cl::sycl::malloc_device<double>(data.ndofs, queue);
-  auto x_view = gko::Array<double>::view(exec, data.ndofs, x);
-  auto x_vec = gko::matrix::Dense<double>::create(
-      exec, gko::dim<2>(data.ndofs, 1), x_view, 1);
-
-  const gko::remove_complex<double> reduction_factor = 1e-5;
-  using cg = gko::solver::Cg<double>;
-  // using bj = gko::preconditioner::Jacobi<double, std::int32_t>;
-
-  auto solver_gen
-      = cg::build()
-            .with_criteria(gko::stop::Iteration::build()
-                               .with_max_iters(data.ndofs)
-                               .on(exec),
-                           gko::stop::ResidualNormReduction<double>::build()
-                               .with_reduction_factor(reduction_factor)
-                               .on(exec))
-            .on(exec);
-
-  auto solver = solver_gen->generate(gko::give(matrix));
 
   timer_start = std::chrono::system_clock::now();
-  solver->apply(gko::lend(vec), gko::lend(x_vec));
+  dolfinx_sycl::solve(A, b, x, coo_pattern.rows, coo_pattern.cols, data.ndofs);
   timer_end = std::chrono::system_clock::now();
   timings["5 - Solve System"] = (timer_end - timer_start);
 
-  auto norm = gko::initialize<gko::matrix::Dense<double>>({0.0}, exec);
-  x_vec->compute_norm2(gko::lend(norm));
-  std::cout << "\nVector norm " << b_host.norm() << " " << norm->get_values()[0]
-            << "\n";
-
   dolfinx_sycl::utils::print_timing_info(mpi_comm, timings);
-
-  // std::cout << solver->get_size();
 
   cl::sycl::free(A, queue);
   cl::sycl::free(b, queue);

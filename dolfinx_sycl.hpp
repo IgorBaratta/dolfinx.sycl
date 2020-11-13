@@ -3,4 +3,5 @@
 
 #include "assemble.hpp"
 #include "la.hpp"
+#include "solve.hpp"
 #include "utils.hpp"

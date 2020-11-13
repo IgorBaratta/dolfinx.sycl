@@ -33,7 +33,7 @@ set(CMAKE_CXX_FLAGS "-O3 -DNDEBUG ${CMAKE_CXX_FLAGS} -Wall")
 find_package(DOLFINX REQUIRED)
 find_package(Ginkgo REQUIRED)
 
-add_executable(sycl_poisson main.cpp poisson.c assemble_impl.cpp)
+add_executable(sycl_poisson main.cpp poisson.c assemble_impl.cpp solve.cpp)
 target_link_libraries(sycl_poisson PRIVATE Ginkgo::ginkgo)
 
 
