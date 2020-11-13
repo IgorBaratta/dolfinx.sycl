@@ -24,7 +24,7 @@ elseif(SYCL_IMPL STREQUAL "LLVM")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
 elseif(SYCL_IMPL STREQUAL "LLVM-CUDA")
   set(CMAKE_CXX_FLAGS
-    "${CMAKE_CXX_FLAGS} -fsycl -fsycl-targets=nvptx64-nvidia-cuda-sycldevice --cuda-path=${CUDA_PATH}")
+   "${CMAKE_CXX_FLAGS} -fsycl -fsycl-targets=nvptx64-nvidia-cuda-sycldevice --gcc-toolchain=/usr/local/software/master/gcc/9 --cuda-path=/usr/local/software/cuda/10.2")    	
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
