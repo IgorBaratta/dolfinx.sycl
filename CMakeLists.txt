@@ -31,8 +31,18 @@ set(CMAKE_CXX_STANDARD 17)
 
 set(CMAKE_CXX_FLAGS "-O3 -DNDEBUG ${CMAKE_CXX_FLAGS} -Wall")
 find_package(DOLFINX REQUIRED)
+find_package(Ginkgo REQUIRED)
 
-add_executable(sycl_poisson main.cpp poisson.c assemble_impl.cpp)
+add_executable(sycl_poisson 
+  main.cpp 
+  poisson.c 
+  assemble_impl.cpp 
+  la.cpp memory.cpp 
+  timing.cpp
+  solve.cpp
+  )
+target_link_libraries(sycl_poisson PRIVATE Ginkgo::ginkgo)
+
 
 if(SYCL_IMPL STREQUAL "LLVM")
     target_link_libraries(sycl_poisson PRIVATE dolfinx)
@@ -42,7 +52,7 @@ elseif(SYCL_IMPL STREQUAL "LLVM-CUDA")
     target_compile_definitions(sycl_poisson PRIVATE __LLVM_SYCL__)
 elseif(SYCL_IMPL STREQUAL "hipSYCL")
     target_link_libraries(sycl_poisson PRIVATE dolfinx)
-    add_sycl_to_target(TARGET sycl_poisson SOURCES main.cpp assemble_impl.cpp)
+    add_sycl_to_target(TARGET sycl_poisson SOURCES main.cpp assemble_impl.cpp la.cpp memory.cpp)
 else()
     target_link_libraries(sycl_poisson dolfinx)
     add_sycl_to_target(TARGET sycl_poisson SOURCES assemble_impl.cpp )

@@ -1,144 +1,88 @@
-#include <CL/sycl.hpp>
+// Copyright (C) 2020 Igor A. Baratta and Chris Richardson
+// SPDX-License-Identifier:    MIT
 
 #include <Eigen/Dense>
 #include <dolfinx.h>
-#include <dolfinx/fem/petsc.h>
-#include <iomanip>
 #include <iostream>
+#include <math.h>
 #include <numeric>
 
-#include "assemble.hpp"
+#include "dolfinx_sycl.hpp"
 #include "poisson.h"
-#include "utils.hpp"
+#include "solve.hpp"
 
 using namespace dolfinx;
+using namespace dolfinx::experimental::sycl;
 
-// Simple code to assemble a dummy RHS vector over some dummy geometry and
-// dofmap
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   common::SubSystemsManager::init_logging(argc, argv);
   common::SubSystemsManager::init_petsc(argc, argv);
 
-  int rank, mpi_size;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+  MPI_Comm mpi_comm{MPI_COMM_WORLD};
 
-  std::size_t nx = 32;
+  int mpi_size, mpi_rank;
+  MPI_Comm_size(mpi_comm, &mpi_size);
+  MPI_Comm_rank(mpi_comm, &mpi_rank);
+
+  std::size_t nx = 20;
   if (argc == 2)
     nx = std::stoi(argv[1]);
 
   auto cmap = fem::create_coordinate_map(create_coordinate_map_poisson);
-  std::array<Eigen::Vector3d, 2> pt{Eigen::Vector3d(0.0, 0.0, 0.0),
-                                    Eigen::Vector3d(1.0, 1.0, 1.0)};
+  std::array<Eigen::Vector3d, 2> pts{Eigen::Vector3d(-1, -1, -1),
+                                     Eigen::Vector3d(1.0, 1.0, 1.0)};
+
   auto mesh = std::make_shared<mesh::Mesh>(generation::BoxMesh::create(
-      MPI_COMM_WORLD, pt, {{nx, nx, nx}}, cmap, mesh::GhostMode::none));
+      mpi_comm, pts, {{nx, nx, nx}}, cmap, mesh::GhostMode::none));
 
   mesh->topology_mutable().create_entity_permutations();
-
   auto V = fem::create_functionspace(create_functionspace_form_poisson_a, "u",
                                      mesh);
 
-  // Create dofmap permutation for insertion into array
-  const graph::AdjacencyList<std::int32_t> &v_dofmap = V->dofmap()->list();
-  const graph::AdjacencyList<std::int32_t> dm_index_b = create_index_vec(v_dofmap);
-  const graph::AdjacencyList<std::int32_t> dm_index_A = create_index_mat(v_dofmap, v_dofmap);
-
   auto f = std::make_shared<function::Function<double>>(V);
-  f->interpolate([](auto &x) {
-    auto dx = Eigen::square(x - 0.5);
-    return 10.0 * Eigen::exp(-(dx.row(0) + dx.row(1)) / 0.02);
+  f->interpolate([](auto& x) {
+    return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
+           * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
   });
+
   // Define variational forms
   auto L = dolfinx::fem::create_form<PetscScalar>(create_form_poisson_L, {V},
                                                   {{"f", f}, {}}, {}, {});
   auto a = dolfinx::fem::create_form<PetscScalar>(create_form_poisson_a, {V, V},
                                                   {}, {}, {});
 
-  
-  std::vector<cl::sycl::device> gpus;
-  auto platforms = cl::sycl::platform::get_platforms();
-  for (auto &p : platforms)
+  auto queue = utils::select_queue(mpi_comm);
+
+  int verb_mode = 2;
+  if (verb_mode)
   {
-    auto devices = p.get_devices();
-    for (auto &device : devices)
-      if (device.is_gpu())
-        gpus.push_back(device);
+    utils::print_device_info(queue.get_device());
+    utils::print_function_space_info(V);
   }
 
-  cl::sycl::queue queue;
+  // Send form data to device (Geometry, Dofmap, Coefficients)
+  auto form_data = memory::send_form_data(mpi_comm, queue, *L, *a, verb_mode);
 
-  int num_devices = gpus.size();
-  if (num_devices >= mpi_size)
-    queue = cl::sycl::queue(gpus[rank], exception_handler, {});
-  else
-    queue = cl::sycl::queue(cl::sycl::cpu_selector(), exception_handler, {});
+  // Assemble vector on device
+  double* b = assemble::assemble_vector(mpi_comm, queue, form_data, verb_mode);
 
-  // Print some information
-  if (rank == 0)
-  {
-    print_device_info(queue.get_device());
-    int tdim = mesh->topology().dim();
-    std::cout << "\nNumber of cells: "
-              << mesh->topology().index_map(tdim)->size_global() << std::endl;
-    std::cout << "Number of dofs: " << V->dofmap()->index_map->size_global()
-              << std::endl;
-  }
+  // Assemble matrix on device
+  auto mat = assemble::assemble_matrix(mpi_comm, queue, form_data, verb_mode);
 
-  // SYCL Code
-  //--------------------------
-  {
-    auto timer_start = std::chrono::system_clock::now();
-    Eigen::VectorXd vec = assemble_vector(queue, *L, dm_index_b);
-    auto timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_L = (timer_end - timer_start);
+  double* x = cl::sycl::malloc_device<double>(form_data.ndofs, queue);
+  queue.fill<double>(x, 0., form_data.ndofs);
 
-    timer_start = std::chrono::system_clock::now();
-    Eigen::VectorXd data = assemble_matrix(queue, *a, dm_index_A);
-    timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_a = (timer_end - timer_start);
+  std::int32_t nnz = mat.indptr[mat.nrows];
+  double norm = solve::ginkgo(mat.data, mat.indptr, mat.indices, mat.nrows, nnz,
+                              b, x, "omp");
 
-    if (rank == 0)
-    {
-      std::cout << "\nSYCL" << std::endl;
+  auto vec = f->vector();
+  double ex_norm = 0;
+  VecNorm(vec, NORM_2, &ex_norm);
 
-      std::cout << "Assemble Vector(s) " << dt_L.count() << "\n";
-      std::cout << "Assemble Matrix (s) " << dt_a.count() << "\n";
-      std::cout << "Vector norm " << vec.norm() << "\n";
-    }
-  }
-
-  // Comparison CPU code below
-  //--------------------------
-  if (num_devices >= mpi_size)
-  {
-    auto timer_start = std::chrono::system_clock::now();
-
-    double norm;
-    la::PETScVector u(*L->function_spaces()[0]->dofmap()->index_map);
-    VecSet(u.vec(), 0);
-    dolfinx::fem::assemble_vector_petsc(u.vec(), *L);
-    VecGhostUpdateBegin(u.vec(), ADD_VALUES, SCATTER_REVERSE);
-    VecGhostUpdateEnd(u.vec(), ADD_VALUES, SCATTER_REVERSE);
-    VecNorm(u.vec(), NORM_2, &norm);
-    auto timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_L = (timer_end - timer_start);
-
-    la::PETScMatrix A = fem::create_matrix(*a);
-    MatZeroEntries(A.mat());
-    timer_start = std::chrono::system_clock::now();
-    fem::assemble_matrix(la::PETScMatrix::add_fn(A.mat()), *a, {});
-    timer_end = std::chrono::system_clock::now();
-    std::chrono::duration<double> dt_a = (timer_end - timer_start);
-
-    if (rank == 0)
-    {
-      std::cout << "\nPETSc" << std::endl;
-      std::cout << "Assemble Vector(s) " << dt_L.count() << "\n";
-      std::cout << "Assemble Matrix(s) " << dt_a.count() << "\n";
-      std::cout << "Vector norm " << norm << "\n";
-    }
-  }
+  std::cout << "Computed norm " << norm << "\n";
+  std::cout << "Reference norm " << ex_norm / (12 * M_PI * M_PI + 1) << "\n";
 
   return 0;
 }

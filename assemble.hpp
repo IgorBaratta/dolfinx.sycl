@@ -1,166 +1,96 @@
+// Copyright (C) 2020 Igor A. Baratta
+// SPDX-License-Identifier:    MIT
 
 #include <CL/sycl.hpp>
 #include <dolfinx.h>
 
-#include <Eigen/Sparse>
-
 #include "assemble_impl.hpp"
+#include "la.hpp"
+#include "memory.hpp"
 #include "poisson.h"
 
-/// Assemble linear form into an SYCL buffer
-Eigen::VectorXd
-assemble_vector(cl::sycl::queue& queue, const dolfinx::fem::Form<double>& L,
-                const dolfinx::graph::AdjacencyList<std::int32_t>& dm_index_b)
+using namespace dolfinx::experimental::sycl;
+
+namespace dolfinx::experimental::sycl::assemble
 {
-  auto mesh = L.mesh();
-  auto dofmap = L.function_spaces()[0]->dofmap();
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
+// Submit vector assembly kernels to queue
+double* assemble_vector(MPI_Comm comm, cl::sycl::queue& queue,
+                        const memory::form_data_t& data, int verbose_mode = 1)
+{
 
-  std::int32_t ndofs = dofmap->index_map->size_local();
-  std::int32_t nghost_dofs = dofmap->index_map->num_ghosts();
-  ndofs = ndofs + nghost_dofs;
-  int nelem_dofs = dofs.num_links(0);
+  std::string step{"Assemble vector on device"};
+  std::map<std::string, std::chrono::duration<double>> timings;
 
-  Eigen::VectorXd global_vector(ndofs);
+  auto start = std::chrono::system_clock::now();
 
-  // Device memory to accumulate assembly entries before summing
-  cl::sycl::buffer<double, 1> b_buf(
-      cl::sycl::range<1>{(std::size_t)dofs.array().size()});
+  auto timer_start = std::chrono::system_clock::now();
+  std::int32_t ndofs_ext = data.ndofs_cell * data.ncells;
+  auto b_ext = cl::sycl::malloc_device<double>(ndofs_ext, queue);
+  queue.fill<double>(b_ext, 0., ndofs_ext).wait();
+  assemble_vector_impl(queue, b_ext, data.x, data.xdofs, data.coeffs_L,
+                       data.ncells, data.ndofs, data.ndofs_cell);
+  auto timer_end = std::chrono::system_clock::now();
+  timings["0 - Compute cell contributions"] = (timer_end - timer_start);
 
-  // Get geometry buffer
-  const auto& geometry = mesh->geometry().x();
-  cl::sycl::buffer<double, 2> geom_buf(geometry.data(),
-                                       {(std::size_t)geometry.rows(), 3});
+  timer_start = std::chrono::system_clock::now();
+  experimental::sycl::la::AdjacencyList acc
+      = experimental::sycl::la::compute_vector_acc_map(comm, queue, data);
+  timer_end = std::chrono::system_clock::now();
+  timings["1 - Create  accumulator from dofmap"] = (timer_end - timer_start);
 
-  // Get geometry dofmap buffer
-  const auto& x_dofmap = mesh->geometry().dofmap();
-  cl::sycl::buffer<int, 2> coord_dm_buf(
-      x_dofmap.array().data(),
-      {(std::size_t)x_dofmap.num_nodes(), (std::size_t)x_dofmap.num_links(0)});
+  timer_start = std::chrono::system_clock::now();
+  double* b = cl::sycl::malloc_device<double>(data.ndofs, queue);
+  accumulate_vector_impl(queue, b, b_ext, acc.indptr, acc.indices,
+                         acc.num_nodes);
+  timer_end = std::chrono::system_clock::now();
+  timings["2 - Accumulate cells contributions"] = (timer_end - timer_start);
 
-  // Get coefficient buffer
-  Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coeff = dolfinx::fem::pack_coefficients(L);
-  cl::sycl::buffer<double, 2> coeff_buf(
-      coeff.data(), {(std::size_t)coeff.rows(), (std::size_t)coeff.cols()});
+  // Free temporary device data
+  cl::sycl::free(b_ext, queue);
+  cl::sycl::free(acc.indices, queue);
+  cl::sycl::free(acc.indptr, queue);
 
-  assemble_rhs(queue, b_buf, geom_buf, coord_dm_buf, coeff_buf, nelem_dofs);
+  auto end = std::chrono::system_clock::now();
+  timings["Total"] = (end - start);
+  experimental::sycl::timing::print_timing_info(comm, timings, step,
+                                                verbose_mode);
 
-  cl::sycl::buffer<int, 1> off_buf(dm_index_b.offsets().data(),
-                                   dm_index_b.offsets().size());
-
-  cl::sycl::buffer<int, 1> index_buf(dm_index_b.array().data(),
-                                     dm_index_b.array().size());
-
-  cl::sycl::buffer<double, 1> gv_buf(global_vector.data(),
-                                     global_vector.size());
-
-  accumulate_rhs(queue, b_buf, gv_buf, index_buf, off_buf);
-
-  return global_vector;
+  return b;
 }
 
-/// Assemble bilinear form into an SYCL buffer
-Eigen::VectorXd
-assemble_matrix(cl::sycl::queue& queue, const dolfinx::fem::Form<double>& a,
-                const dolfinx::graph::AdjacencyList<std::int32_t>& dm_index_A)
+// Submit vector assembly kernels to queue
+experimental::sycl::la::CsrMatrix
+assemble_matrix(MPI_Comm comm, cl::sycl::queue& queue,
+                const memory::form_data_t& data, int verbose_mode = 1)
 {
-  std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
-  std::shared_ptr<const dolfinx::fem::DofMap> dofmap
-      = a.function_spaces()[0]->dofmap();
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
 
-  int tdim = mesh->topology().dim();
-  [[maybe_unused]] std::int32_t ndofs = dofmap->index_map->size_local();
-  std::int32_t nelem = mesh->topology().index_map(tdim)->size_local();
-  int nelem_dofs = dofs.num_links(0);
+  // Compute Sparsity pattern
+  auto [mat, acc_map] = experimental::sycl::la::create_sparsity_pattern(
+      comm, queue, data, verbose_mode);
 
-  // Get geometry buffer
-  const auto& geometry = mesh->geometry().x();
-  cl::sycl::buffer<double, 2> geom_buf(geometry.data(),
-                                       {(std::size_t)geometry.rows(), 3});
+  std::string step{"Assemble matrix on device"};
+  std::map<std::string, std::chrono::duration<double>> timings;
 
-  // Get geometry dofmap buffer
-  const auto& x_dofmap = mesh->geometry().dofmap();
-  cl::sycl::buffer<int, 2> coord_dm_buf(
-      x_dofmap.array().data(),
-      {(std::size_t)x_dofmap.num_nodes(), (std::size_t)x_dofmap.num_links(0)});
+  auto start = std::chrono::system_clock::now();
 
-  // Prepare coefficients
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coeffs
-      = dolfinx::fem::pack_coefficients(a);
+  // Number of stored nonzeros on the extended COO format
+  std::int32_t stored_nz = data.ncells * data.ndofs_cell * data.ndofs_cell;
 
-  // FIXME: allow non-empty coefficients and functions
-  cl::sycl::buffer<double, 2> coeff_buf(
-      {(std::size_t)nelem, (std::size_t)nelem_dofs});
+  auto A_ext = cl::sycl::malloc_device<double>(stored_nz, queue);
+  queue.fill<double>(A_ext, 0., stored_nz).wait_and_throw();
 
-  cl::sycl::buffer<double, 1> A_buf(
-      cl::sycl::range<1>{(std::size_t)nelem * nelem_dofs * nelem_dofs});
+  assemble_matrix_impl(queue, A_ext, data.x, data.xdofs, data.coeffs_a,
+                       data.ncells, data.ndofs, data.ndofs_cell);
 
-  assemble_lhs(queue, A_buf, geom_buf, coord_dm_buf, coeff_buf, nelem_dofs);
+  accumulate_vector_impl(queue, mat.data, A_ext, acc_map.indptr,
+                         acc_map.indices, acc_map.num_nodes);
 
-  Eigen::VectorXd global_matrix(dm_index_A.offsets().size() - 1);
-  cl::sycl::buffer<double, 1> gm_buf(global_matrix.data(),
-                                     global_matrix.size());
+  auto end = std::chrono::system_clock::now();
+  timings["Total"] = (end - start);
+  experimental::sycl::timing::print_timing_info(comm, timings, step,
+                                                verbose_mode);
 
-  // Second kernel to accumulate RHS for each dof
-  cl::sycl::buffer<int, 1> off_buf(dm_index_A.offsets().data(),
-                                   dm_index_A.offsets().size());
-
-  cl::sycl::buffer<int, 1> index_buf(dm_index_A.array().data(),
-                                     dm_index_A.array().size());
-
-  accumulate_lhs(queue, A_buf, gm_buf, index_buf, off_buf);
-
-  return global_matrix;
+  return mat;
 }
 
-/// Assemble linear form into an SYCL buffer
-void assemble_vector_usm(
-    cl::sycl::queue& queue, const dolfinx::fem::Form<double>& L,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dm_index_b)
-{
-  auto mesh = L.mesh();
-  auto dofmap = L.function_spaces().at(0)->dofmap();
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
-
-  std::int32_t ncells = dofs.num_nodes();
-  std::int32_t ndofs = dofmap->index_map->size_local();
-  std::int32_t nghost_dofs = dofmap->index_map->num_ghosts();
-  ndofs = ndofs + nghost_dofs;
-  int nelem_dofs = dofs.num_links(0);
-
-  std::int32_t ndofs_ext = dofs.array().size();
-
-  auto b = static_cast<double*>(
-      cl::sycl::malloc_shared(sizeof(double) * ndofs_ext, queue));
-
-  // Get geometry data
-  const auto& geometry = mesh->geometry().x();
-  auto x = static_cast<double*>(
-      cl::sycl::malloc_shared(sizeof(double) * geometry.size(), queue));
-  std::memcpy(x, geometry.data(), sizeof(double) * geometry.size());
-
-  // Get geometry dofmap buffer
-  const auto& x_dofmap = mesh->geometry().dofmap().array();
-  auto coord_dm = static_cast<std::int32_t*>(
-      cl::sycl::malloc_shared(sizeof(std::int32_t) * x_dofmap.size(), queue));
-  std::memcpy(coord_dm, x_dofmap.data(),
-              sizeof(std::int32_t) * x_dofmap.size());
-
-  // Get coefficient buffer
-  Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coeffs = dolfinx::fem::pack_coefficients(L);
-  auto coeff = static_cast<double*>(
-      cl::sycl::malloc_shared(sizeof(double) * coeffs.size(), queue));
-  std::memcpy(coeff, coeffs.data(), sizeof(double) * coeffs.size());
-
-  assemble_rhs_usm(queue, b, x, coord_dm, coeff, ncells, ndofs, nelem_dofs);
-
-  double cc = 0;
-  for (int i = 0; i < ndofs_ext; i++)
-  {
-    cc += b[i];
-  }
-  std::cout << cc;
-}
+} // namespace dolfinx::experimental::sycl::assemble
