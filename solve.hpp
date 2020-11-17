@@ -1,8 +1,14 @@
-#include <cstdint>
-#include <vector>
+// Copyright (C) 2020 Igor A. Baratta
+// SPDX-License-Identifier:    MIT
 
-namespace dolfinx_sycl
+#include <cstdint>
+#include <string>
+
+namespace dolfinx::experimental::sycl::solve
 {
-void solve(double* A, double* b, double* x, std::int32_t* coo_rows,
-           std::int32_t* coo_cols, std::int32_t stored_nz, int ndofs);
+
+double ginkgo(double* A, std::int32_t* indptr, std::int32_t* indices,
+              std::int32_t nrows, std::int32_t nnz, double* b, double* x,
+              std::string executor);
+
 }

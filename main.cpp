@@ -1,4 +1,5 @@
-#include <CL/sycl.hpp>
+// Copyright (C) 2020 Igor A. Baratta and Chris Richardson
+// SPDX-License-Identifier:    MIT
 
 #include <Eigen/Dense>
 #include <dolfinx.h>
@@ -8,11 +9,11 @@
 
 #include "dolfinx_sycl.hpp"
 #include "poisson.h"
+#include "solve.hpp"
 
 using namespace dolfinx;
+using namespace dolfinx::experimental::sycl;
 
-// Simple code to assemble a dummy RHS vector over some dummy geometry and
-// dofmap
 int main(int argc, char* argv[])
 {
   common::SubSystemsManager::init_logging(argc, argv);
@@ -51,70 +52,37 @@ int main(int argc, char* argv[])
   auto a = dolfinx::fem::create_form<PetscScalar>(create_form_poisson_a, {V, V},
                                                   {}, {}, {});
 
-  auto queue = dolfinx_sycl::utils::select_queue(mpi_comm);
+  auto queue = utils::select_queue(mpi_comm);
 
-  dolfinx_sycl::utils::print_device_info(queue.get_device());
-  dolfinx_sycl::utils::print_function_space_info(V);
+  int verb_mode = 2;
+  if (verb_mode)
+  {
+    utils::print_device_info(queue.get_device());
+    utils::print_function_space_info(V);
+  }
 
-  // Keep list of timings
-  std::map<std::string, std::chrono::duration<double>> timings;
+  // Send form data to device (Geometry, Dofmap, Coefficients)
+  auto form_data = memory::send_form_data(mpi_comm, queue, *L, *a, verb_mode);
 
-  // Create dofmap permutation for insertion into array
-  // TODO: Create SYCL kernel.
-  auto timer_start = std::chrono::system_clock::now();
-  const graph::AdjacencyList<std::int32_t>& v_dofmap = V->dofmap()->list();
-  const graph::AdjacencyList<std::int32_t> dm_index_vec
-      = dolfinx_sycl::la::create_index_vec(v_dofmap);
-  auto coo_pattern = dolfinx_sycl::la::coo_pattern(queue, v_dofmap);
-  auto timer_end = std::chrono::system_clock::now();
-  timings["0 - Create Permutation"] = (timer_end - timer_start);
+  // Assemble vector on device
+  double* b = assemble::assemble_vector(mpi_comm, queue, form_data, verb_mode);
 
-  // Send data to device
-  timer_start = std::chrono::system_clock::now();
-  dolfinx_sycl::assemble::device_data_t data
-      = dolfinx_sycl::assemble::send_data_to_device(queue, *L, *a);
-  timer_end = std::chrono::system_clock::now();
-  timings["1 - Transfer Data"] = (timer_end - timer_start);
+  // Assemble matrix on device
+  auto mat = assemble::assemble_matrix(mpi_comm, queue, form_data, verb_mode);
 
-  // Assemble Vector
-  // Cells-wise contribution
-  timer_start = std::chrono::system_clock::now();
-  double* b_ext = dolfinx_sycl::assemble::assemble_vector(queue, data);
-  timer_end = std::chrono::system_clock::now();
-  timings["2 - Assemble Vector"] = (timer_end - timer_start);
-  // Accumulate
-  timer_start = std::chrono::system_clock::now();
-  double* b = dolfinx_sycl::assemble::accumulate_vector(queue, b_ext, data,
-                                                        dm_index_vec);
+  double* x = cl::sycl::malloc_device<double>(form_data.ndofs, queue);
+  queue.fill<double>(x, 0., form_data.ndofs);
 
-  cl::sycl::free(b_ext, queue);
+  std::int32_t nnz = mat.indptr[mat.nrows];
+  double norm = solve::ginkgo(mat.data, mat.indptr, mat.indices, mat.nrows, nnz,
+                              b, x, "omp");
 
-  timer_end = std::chrono::system_clock::now();
-  timings["3 - Vector Accumulate"] = (timer_end - timer_start);
+  auto vec = f->vector();
+  double ex_norm = 0;
+  VecNorm(vec, NORM_2, &ex_norm);
 
-  // Assemble Matrix
-  // Cells-wise contributions
-  timer_start = std::chrono::system_clock::now();
-  double* A = dolfinx_sycl::assemble::assemble_matrix(queue, data);
-  timer_end = std::chrono::system_clock::now();
-  timings["4 - Assemble Matrix"] = (timer_end - timer_start);
+  std::cout << "Computed norm " << norm << "\n";
+  std::cout << "Reference norm " << ex_norm / (12 * M_PI * M_PI + 1) << "\n";
 
-  auto x = cl::sycl::malloc_device<double>(data.ndofs, queue);
-  timer_start = std::chrono::system_clock::now();
-  dolfinx_sycl::solve(A, b, x, coo_pattern.rows, coo_pattern.cols,
-                      coo_pattern.store_nz, data.ndofs);
-  timer_end = std::chrono::system_clock::now();
-  timings["5 - Solve System"] = (timer_end - timer_start);
-
-  dolfinx_sycl::utils::print_timing_info(mpi_comm, timings);
-
-  Eigen::VectorXd x_host(data.ndofs);
-  queue.memcpy(x_host.data(), x, sizeof(double) * x_host.size()).wait();
-  std::cout << x_host.norm();
-
-  std::cout << x_host.norm();
-
-  cl::sycl::free(A, queue);
-  cl::sycl::free(b, queue);
   return 0;
 }

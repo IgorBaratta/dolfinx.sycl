@@ -1,46 +1,72 @@
-#include <ginkgo/ginkgo.hpp>
+// Copyright (C) 2020 Igor A. Baratta
+// SPDX-License-Identifier:    MIT
 
 #include "solve.hpp"
+#include <ginkgo/ginkgo.hpp>
+#include <map>
 
-void dolfinx_sycl::solve(double* A, double* b, double* x,
-                         std::int32_t* coo_rows, std::int32_t* coo_cols,
-                         std::int32_t stored_nz, int ndofs)
+double dolfinx::experimental::sycl::solve::ginkgo(
+    double* A, std::int32_t* indptr, std::int32_t* indices, std::int32_t nrows,
+    std::int32_t nnz, double* b, double* x, std::string executor)
 {
-  // auto exec = gko::DpcppExecutor::create(0,
-  // gko::ReferenceExecutor::create());
-  //   auto exec = gko::CudaExecutor(0, gko::OmpExecutor::create(), true);
-  auto exec = gko::ReferenceExecutor::create();
-
-  // Create Vector
-  auto b_view = gko::Array<double>::view(exec, ndofs, b);
-  auto vec = gko::matrix::Dense<double>::create(exec, gko::dim<2>(ndofs, 1),
-                                                b_view, 1);
-
-  using mtx = gko::matrix::Coo<double, std::int32_t>;
-
-  auto values = gko::Array<double>::view(exec, stored_nz, A);
-  
-  auto rows = gko::Array<std::int32_t>::view(exec, stored_nz, coo_rows);
-  auto cols = gko::Array<std::int32_t>::view(exec, stored_nz, coo_cols);
-  auto matrix = mtx::create(exec, gko::dim<2>(ndofs), values, rows, cols);
-
-  auto x_view = gko::Array<double>::view(exec, ndofs, x);
-  auto x_vec = gko::matrix::Dense<double>::create(exec, gko::dim<2>(ndofs, 1),
-                                                  x_view, 1);
-
-  const gko::remove_complex<double> reduction_factor = 1e-5;
+  using mtx = gko::matrix::Csr<double, std::int32_t>;
   using cg = gko::solver::Cg<double>;
 
+  std::map<std::string, std::function<std::shared_ptr<gko::Executor>()>>
+      exec_map{{"omp", [] { return gko::OmpExecutor::create(); }},
+               {"cuda",
+                [] {
+                  return gko::CudaExecutor::create(
+                      0, gko::OmpExecutor::create(), true);
+                }},
+               {"hip",
+                [] {
+                  return gko::HipExecutor::create(0, gko::OmpExecutor::create(),
+                                                  true);
+                }},
+               {"dpcpp",
+                [] {
+                  return gko::DpcppExecutor::create(0,
+                                                    gko::OmpExecutor::create());
+                }},
+               {"reference", [] { return gko::ReferenceExecutor::create(); }}};
+
+  auto exec = exec_map.at(executor)(); // throws if not valid
+
+  // Create Input Vector
+  auto b_view = gko::Array<double>::view(exec, nrows, b);
+  auto in = gko::matrix::Dense<double>::create(exec, gko::dim<2>(nrows, 1),
+                                               b_view, 1);
+
+  // Create Output Vector
+  auto x_view = gko::Array<double>::view(exec, nrows, x);
+  auto out = gko::matrix::Dense<double>::create(exec, gko::dim<2>(nrows, 1),
+                                                x_view, 1);
+
+  // Create Matrix
+  auto data_v = gko::Array<double>::view(exec, nnz, A);
+  auto indptr_v = gko::Array<std::int32_t>::view(exec, nrows + 1, indptr);
+  auto indices_v = gko::Array<std::int32_t>::view(exec, nnz, indices);
+  auto dim = gko::dim<2>(nrows);
+  auto matrix = mtx::create(exec, dim, data_v, indices_v, indptr_v);
+
+  const double reduction_factor = 1e-5;
+
+  // Generate solver
   auto solver_gen
       = cg::build()
             .with_criteria(
-                gko::stop::Iteration::build().with_max_iters(ndofs).on(exec),
+                gko::stop::Iteration::build().with_max_iters(100u).on(exec),
                 gko::stop::ResidualNormReduction<double>::build()
                     .with_reduction_factor(reduction_factor)
                     .on(exec))
             .on(exec);
 
   auto solver = solver_gen->generate(gko::give(matrix));
+  solver->apply(gko::lend(in), gko::lend(out));
 
-  solver->apply(gko::lend(vec), gko::lend(x_vec));
+  auto res = gko::initialize<gko::matrix::Dense<double>>({0.0}, exec);
+  out->compute_norm2(gko::lend(res));
+
+  return res->get_values()[0];
 }

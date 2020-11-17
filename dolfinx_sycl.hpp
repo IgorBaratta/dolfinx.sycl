@@ -3,5 +3,6 @@
 
 #include "assemble.hpp"
 #include "la.hpp"
+#include "memory.hpp"
 #include "solve.hpp"
 #include "utils.hpp"
