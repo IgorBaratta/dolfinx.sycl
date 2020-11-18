@@ -1,7 +1,8 @@
 // Copyright (C) 2020 Igor A. Baratta and Chris Richardson
 // SPDX-License-Identifier:    MIT
 
-#include <Eigen/Dense>
+#include <CL/sycl.hpp>
+
 #include <dolfinx.h>
 #include <iostream>
 #include <math.h>

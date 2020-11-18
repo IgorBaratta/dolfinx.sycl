@@ -238,7 +238,7 @@ transpose_map(cl::sycl::queue& queue,
 
   // Count the number times the entry appears
   cl::sycl::range<1> range(map.size);
-  queue.parallel_for<class CountSharedDofs>(range, [=](cl::sycl::id<1> Id) {
+  queue.parallel_for<class CountSharedEntries>(range, [=](cl::sycl::id<1> Id) {
     int i = Id.get(0);
 
     std::int32_t entry = map.forward[i];
@@ -262,7 +262,7 @@ transpose_map(cl::sycl::queue& queue,
   queue.fill<std::int32_t>(counter, 0, nnz).wait_and_throw();
 
   // Position to accumulate
-  queue.parallel_for<class GatherDofs>(range, [=](cl::sycl::id<1> Id) {
+  queue.parallel_for<class GatherEntries>(range, [=](cl::sycl::id<1> Id) {
     int i = Id.get(0);
     std::int32_t entry = map.forward[i];
     auto global_ptr = cl::sycl::global_ptr<std::int32_t>(&counter[entry]);
