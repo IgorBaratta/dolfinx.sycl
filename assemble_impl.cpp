@@ -54,7 +54,7 @@ void assemble_vector_impl(cl::sycl::queue& queue, double* b, double* x,
 }
 
 // Second kernel to accumulate RHS for each dof
-void accumulate_vector_impl(cl::sycl::queue& queue, double* b, double* b_ext,
+void accumulate_impl(cl::sycl::queue& queue, double* x, double* x_ext,
                             int* offsets, int* indices, int ndofs)
 {
   cl::sycl::range<1> range{(std::size_t)ndofs};
@@ -64,9 +64,9 @@ void accumulate_vector_impl(cl::sycl::queue& queue, double* b, double* b_ext,
 
       double val = 0.0;
       for (int j = offsets[i]; j < offsets[i + 1]; ++j)
-        val += b_ext[indices[j]];
+        val += x_ext[indices[j]];
 
-      b[i] = val;
+      x[i] = val;
     };
 
     cgh.parallel_for<class AccumulationKernel_b>(range, kernel);
@@ -118,32 +118,6 @@ void assemble_matrix_impl(cl::sycl::queue& queue, double* A, double* x,
     };
 
     cgh.parallel_for<class AssemblyKernelUSM_A>(range, kernel);
-  });
-
-  try
-  {
-    queue.wait_and_throw();
-  }
-  catch (cl::sycl::exception const& e)
-  {
-    std::cout << "Caught synchronous SYCL exception:\n"
-              << e.what() << std::endl;
-  }
-}
-
-// Second kernel to accumulate RHS for each dof
-void accumulate_matrix_impl(cl::sycl::queue& queue, double* A, double* A_ext,
-                            std::int32_t* offsets, std::int32_t* forward,
-                            std::int32_t* reverse, int nnz)
-{
-  cl::sycl::range<1> range{(std::size_t)nnz};
-  cl::sycl::event event = queue.submit([&](cl::sycl::handler& cgh) {
-    auto kernel = [=](cl::sycl::id<1> ID) {
-      const int i = ID.get(0);
-      A[forward[i]] += A_ext[reverse[i]];
-    };
-
-    cgh.parallel_for<class AccumulationKernel_b>(range, kernel);
   });
 
   try

@@ -253,7 +253,8 @@ transpose_map(cl::sycl::queue& queue,
 
   tmap.num_nodes = nnz;
   tmap.num_links = map.size;
-  tmap.indptr = cl::sycl::malloc_device<std::int32_t>(tmap.num_nodes + 1, queue);
+  tmap.indptr
+      = cl::sycl::malloc_device<std::int32_t>(tmap.num_nodes + 1, queue);
   tmap.indices = cl::sycl::malloc_device<std::int32_t>(tmap.num_links, queue);
   experimental::sycl::algorithms::exclusive_scan(queue, counter, tmap.indptr,
                                                  tmap.num_nodes);
@@ -319,7 +320,8 @@ experimental::sycl::la::create_sparsity_pattern(
   timer_end = std::chrono::system_clock::now();
   timings["2 - Remove duplicated entries"] = (timer_end - timer_start);
 
-  std::int32_t nnz = new_mat.indptr[new_mat.nrows];
+  std::int32_t nnz;
+  queue.memcpy(&nnz, &new_mat.indptr[new_mat.nrows], sizeof(std::int32_t)).wait();
   auto map = transpose_map(queue, acc_map, nnz);
 
   auto end = std::chrono::system_clock::now();

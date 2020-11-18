@@ -73,7 +73,8 @@ int main(int argc, char* argv[])
   double* x = cl::sycl::malloc_device<double>(form_data.ndofs, queue);
   queue.fill<double>(x, 0., form_data.ndofs);
 
-  std::int32_t nnz = mat.indptr[mat.nrows];
+  std::int32_t nnz; //Todo: Store nnz 
+  queue.memcpy(&nnz, &mat.indptr[mat.nrows], sizeof(std::int32_t)).wait();
   double norm = solve::ginkgo(mat.data, mat.indptr, mat.indices, mat.nrows, nnz,
                               b, x, "omp");
 
@@ -81,7 +82,7 @@ int main(int argc, char* argv[])
   double ex_norm = 0;
   VecNorm(vec, NORM_2, &ex_norm);
 
-  std::cout << "Computed norm " << norm << "\n";
+  std::cout << "\nComputed norm " << norm << "\n";
   std::cout << "Reference norm " << ex_norm / (12 * M_PI * M_PI + 1) << "\n";
 
   return 0;
