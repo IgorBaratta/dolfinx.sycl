@@ -21,7 +21,7 @@ double* assemble_vector(MPI_Comm comm, cl::sycl::queue& queue,
 
   std::string step{"Assemble vector on device"};
   std::map<std::string, std::chrono::duration<double>> timings;
-
+  std::cout << "Assemble vector on device, starting ....\n";
 
   auto timer_start = std::chrono::system_clock::now();
   experimental::sycl::la::AdjacencyList acc
