@@ -23,7 +23,7 @@ ffcx --sycl_defines=True poisson.ufl
 
 mkdir build
 cd build
-cmake -DSYCL_IMPL=hipSYCL -DCMAKE_BUILD_TYPE=Release ..
+cmake -DSYCL_IMPL=hipSYCL -DCMAKE_PREFIX_PATH=${Ginkgo_DIR} ..
 make -j8
 ```
 
@@ -36,7 +36,7 @@ export HIPSYCL_GPU_ARCH=sm_60
 
 mkdir build
 cd build
-cmake -DSYCL_IMPL=hipSYCL ..
+cmake -DSYCL_IMPL=hipSYCL -DCMAKE_PREFIX_PATH=${Ginkgo_DIR}..
 make -j8
 ```
 ** Runnning Dolfinx.sycl with hipsycl + CUDA requires eigen@master.
@@ -67,7 +67,7 @@ export CC=gcc
 
 mkdir build
 cd build
-cmake -DSYCL_IMPL=LLVM ..
+cmake -DSYCL_IMPL=LLVM -DCMAKE_PREFIX_PATH=${Ginkgo_DIR} ..
 make -j8
 ```
 
@@ -81,7 +81,7 @@ export CC=gcc
 
 mkdir build
 cd build
-cmake -DSYCL_IMPL=LLVM-CUDA -DCUDA_PATH=Release ..
+cmake -DSYCL_IMPL=LLVM-CUDA -DCUDA_PATH=${CUDA_PATH} -DCMAKE_PREFIX_PATH=${Ginkgo_DIR} ..
 make -j8
 ```
 

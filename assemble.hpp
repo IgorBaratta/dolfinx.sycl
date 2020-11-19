@@ -28,6 +28,7 @@ double* assemble_vector(MPI_Comm comm, cl::sycl::queue& queue,
       = experimental::sycl::la::compute_vector_acc_map(comm, queue, data);
   auto timer_end = std::chrono::system_clock::now();
   timings["0 - Create  accumulator from dofmap"] = (timer_end - timer_start);
+  std::cout << "Create accumulator ....\n";
 
   auto start = std::chrono::system_clock::now();
 
