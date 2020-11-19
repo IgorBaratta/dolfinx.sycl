@@ -341,7 +341,6 @@ experimental::sycl::la::compute_vector_acc_map(
   auto counter = cl::sycl::malloc_device<std::int32_t>(data.ndofs, queue);
   queue.fill<std::int32_t>(counter, 0, data.ndofs).wait();
   
-  std::cout << "break point 1";
   // Count the number times the dof is shared
   cl::sycl::range<1> cell_range(data.ncells);
   queue.parallel_for<class CountSharedDofs>(
@@ -358,8 +357,6 @@ experimental::sycl::la::compute_vector_acc_map(
       });
   queue.wait();
   
-  std::cout << "break point 2";
-
   // Create accumulator adjacency list
   experimental::sycl::la::AdjacencyList acc;
   acc.num_nodes = data.ndofs;
@@ -367,8 +364,6 @@ experimental::sycl::la::compute_vector_acc_map(
   acc.indptr = cl::sycl::malloc_device<std::int32_t>(acc.num_nodes + 1, queue);
   experimental::sycl::algorithms::exclusive_scan(queue, counter, acc.indptr,
                                                  acc.num_nodes);
-  std::cout << "break point 3";
-
   acc.indices = cl::sycl::malloc_device<std::int32_t>(acc.num_links, queue);
   queue.fill<std::int32_t>(counter, 0, data.ndofs).wait();
 
@@ -387,7 +382,6 @@ experimental::sycl::la::compute_vector_acc_map(
       acc.indices[pos] = offset + j;
     }
   });
-  std::cout << "break point 4";
   queue.wait();
 
   return acc;

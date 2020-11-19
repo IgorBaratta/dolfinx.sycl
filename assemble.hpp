@@ -21,14 +21,12 @@ double* assemble_vector(MPI_Comm comm, cl::sycl::queue& queue,
 
   std::string step{"Assemble vector on device"};
   std::map<std::string, std::chrono::duration<double>> timings;
-  std::cout << "Assemble vector on device, starting ....\n";
 
   auto timer_start = std::chrono::system_clock::now();
   experimental::sycl::la::AdjacencyList acc
       = experimental::sycl::la::compute_vector_acc_map(comm, queue, data);
   auto timer_end = std::chrono::system_clock::now();
   timings["0 - Create  accumulator from dofmap"] = (timer_end - timer_start);
-  std::cout << "Create accumulator ....\n";
 
   auto start = std::chrono::system_clock::now();
 
