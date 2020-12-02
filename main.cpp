@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
   std::int32_t nnz; //Todo: Store nnz 
   queue.memcpy(&nnz, &mat.indptr[mat.nrows], sizeof(std::int32_t)).wait();
   double norm = solve::ginkgo(mat.data, mat.indptr, mat.indices, mat.nrows, nnz,
-                              b, x, "omp");
+                              b, x, "cuda");
 
   auto vec = f->vector();
   double ex_norm = 0;
@@ -86,5 +86,6 @@ int main(int argc, char* argv[])
   std::cout << "\nComputed norm " << norm << "\n";
   std::cout << "Reference norm " << ex_norm / (12 * M_PI * M_PI + 1) << "\n";
 
+  std::cout << std::endl << std::endl;
   return 0;
 }
