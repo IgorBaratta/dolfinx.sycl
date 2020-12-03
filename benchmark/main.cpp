@@ -10,7 +10,7 @@
 
 using namespace dolfinx;
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   common::SubSystemsManager::init_logging(argc, argv);
   common::SubSystemsManager::init_petsc(argc, argv);
@@ -37,8 +37,9 @@ int main(int argc, char *argv[])
                                      mesh);
 
   auto f = std::make_shared<function::Function<PetscScalar>>(V);
-  f->interpolate([](auto &x) {
-    return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0)) * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
+  f->interpolate([](auto& x) {
+    return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
+           * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
   });
 
   // Define variational forms
@@ -56,11 +57,18 @@ int main(int argc, char *argv[])
   MatZeroEntries(A.mat());
 
   // Assemble Matrix
-  dolfinx::common::Timer t0("ZZZ Assemble Matrix");
   fem::assemble_matrix(la::PETScMatrix::add_fn(A.mat()), *a, {});
   MatAssemblyBegin(A.mat(), MAT_FINAL_ASSEMBLY);
   MatAssemblyEnd(A.mat(), MAT_FINAL_ASSEMBLY);
-  t0.stop();
+  
+  for (int i = 0; i < 5; i++)
+  {
+    dolfinx::common::Timer t0("ZZZ Assemble Matrix");
+    fem::assemble_matrix(la::PETScMatrix::add_fn(A.mat()), *a, {});
+    MatAssemblyBegin(A.mat(), MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A.mat(), MAT_FINAL_ASSEMBLY);
+    t0.stop();
+  }
 
   dolfinx::common::Timer t1("ZZZ Assemble Vector");
   fem::assemble_vector_petsc(b.vec(), *L);
@@ -81,7 +89,8 @@ int main(int argc, char *argv[])
 
   dolfinx::list_timings(mpi_comm, {dolfinx::TimingType::wall});
 
-  std::cout << "Number of degrees of freedom: " << V->dofmap()->index_map->size_global() << std::endl;
+  std::cout << "Number of degrees of freedom: "
+            << V->dofmap()->index_map->size_global() << std::endl;
 
   return 0;
 }
