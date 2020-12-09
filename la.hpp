@@ -4,7 +4,11 @@
 #pragma once
 
 #include <CL/sycl.hpp>
+
+#undef SYCL_DEVICE_ONLY
 #include <dolfinx.h>
+#define SYCL_DEVICE_ONLY
+
 #include <mpi.h>
 
 #include <cstdint>

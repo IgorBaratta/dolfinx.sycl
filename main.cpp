@@ -3,7 +3,16 @@
 
 #include <CL/sycl.hpp>
 
+#ifdef SYCL_DEVICE_ONLY
+#undef SYCL_DEVICE_ONLY
+#include <Eigen/Core>
 #include <dolfinx.h>
+#define SYCL_DEVICE_ONLY
+#else
+#include <Eigen/Core>
+#include <dolfinx.h>
+#endif
+
 #include <iostream>
 #include <math.h>
 #include <numeric>
@@ -72,12 +81,20 @@ int main(int argc, char* argv[])
   auto mat = assemble::assemble_matrix(mpi_comm, queue, form_data, verb_mode);
 
   double* x = cl::sycl::malloc_device<double>(form_data.ndofs, queue);
-  queue.fill<double>(x, 0., form_data.ndofs);
 
-  std::int32_t nnz; //Todo: Store nnz 
+  queue.submit(
+      [&](cl::sycl::handler& h) { h.fill<double>(x, 0., form_data.ndofs); });
+  queue.wait();
+
+  auto device = queue.get_device();
+  std::string executor = "omp";
+  if (device.is_gpu())
+    executor = "cuda";
+
+  std::int32_t nnz; // Todo: Store nnz
   queue.memcpy(&nnz, &mat.indptr[mat.nrows], sizeof(std::int32_t)).wait();
   double norm = solve::ginkgo(mat.data, mat.indptr, mat.indices, mat.nrows, nnz,
-                              b, x, "omp");
+                              b, x, executor);
 
   auto vec = f->vector();
   double ex_norm = 0;

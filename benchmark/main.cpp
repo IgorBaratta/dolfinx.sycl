@@ -1,5 +1,7 @@
+#undef SYCL_DEVICE_ONLY
 #include <dolfinx.h>
 #include <dolfinx/fem/petsc.h>
+#define SYCL_DEVICE_ONLY
 
 #include <iostream>
 #include <math.h>

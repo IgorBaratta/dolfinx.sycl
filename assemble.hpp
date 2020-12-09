@@ -2,7 +2,10 @@
 // SPDX-License-Identifier:    MIT
 
 #include <CL/sycl.hpp>
+
+#undef SYCL_DEVICE_ONLY
 #include <dolfinx.h>
+#define SYCL_DEVICE_ONLY
 
 #include "assemble_impl.hpp"
 #include "la.hpp"
@@ -32,6 +35,7 @@ double* assemble_vector(MPI_Comm comm, cl::sycl::queue& queue,
   auto start = std::chrono::system_clock::now();
 
   timer_start = std::chrono::system_clock::now();
+  
   // Allocated unassembled vector on device
   std::int32_t ndofs_ext = data.ndofs_cell * data.ncells;
   auto b_ext = cl::sycl::malloc_device<double>(ndofs_ext, queue);

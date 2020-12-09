@@ -1,6 +1,13 @@
 // Copyright (C) 2020 Igor A. Baratta
 // SPDX-License-Identifier:    MIT
 
+#pragma once
+
+#include <CL/sycl.hpp>
+
+#include <numeric>
+#include <vector>
+
 namespace dolfinx::experimental::sycl::algorithms
 {
 //--------------------------------------------------------------------------
@@ -16,66 +23,15 @@ void swap(T* a, T* b)
 void exclusive_scan(cl::sycl::queue& queue, std::int32_t* input,
                     std::int32_t* output, std::int32_t size)
 {
-  std::int32_t N = size;
-  if ((size && !(size & (size - 1))) == 0)
-  {
-    N--;
-    N |= N >> 1;
-    N |= N >> 2;
-    N |= N >> 4;
-    N |= N >> 8;
-    N |= N >> 16;
-    N++;
-  }
+  //FIXME: do not copy data back to host!!!!!!!!!!!!!!
+  std::vector<std::int32_t> in(size, 0);
+  std::vector<std::int32_t> out(size + 1, 0);
 
-  if (N < 64)
-    N = 64;
+  queue.memcpy(in.data(), input, size * sizeof(std::int32_t)).wait();
 
-  constexpr std::int32_t L = 64;
-  const std::size_t G = N / L;
+  std::partial_sum(in.begin(), in.end(), out.begin() + 1);
 
-  // Allocate memory on device for working arrays
-  auto input_copy = cl::sycl::malloc_device<std::int32_t>(N, queue);
-  auto temp = cl::sycl::malloc_device<std::int32_t>(N, queue);
-  auto global_work = cl::sycl::malloc_device<std::int32_t>(G, queue);
-
-  // Initialize data
-  queue.fill(input_copy, 0, N).wait();
-  queue.fill(temp, 0, N).wait();
-  queue.memcpy(input_copy, input, sizeof(std::int32_t) * size).wait();
-
-  queue.parallel_for<class LocalScan>(cl::sycl::range<1>(G),
-                                      [=](cl::sycl::id<1> it) {
-                                        int i = it.get(0);
-                                        int offset = i * L;
-                                        std::int32_t local_sum = 0;
-                                        for (std::size_t j = 0; j < L; j++)
-                                          local_sum += input_copy[offset + j];
-                                        global_work[i] = local_sum;
-                                      });
-
-  queue.wait();
-
-  queue.parallel_for<class LocalUpdate>(
-      cl::sycl::range<1>(G), [=](cl::sycl::id<1> Id) {
-        int i = Id.get(0);
-        std::int32_t local_offset = 0;
-        for (int j = 0; j < i; j++)
-          local_offset += global_work[j];
-
-        int offset = i * L;
-        temp[offset] = local_offset;
-        for (std::size_t j = 0; j < L - 1; j++)
-          temp[offset + j + 1] = temp[offset + j] + input_copy[offset + j];
-      });
-
-  queue.wait();
-  queue.memcpy(output, temp, size * sizeof(std::int32_t)).wait();
-  output[size] = output[size - 1] + input[size - 1];
-
-  cl::sycl::free(temp, queue);
-  cl::sycl::free(global_work, queue);
-  cl::sycl::free(input_copy, queue);
+  queue.memcpy(output, out.data(), (size + 1) * sizeof(std::int32_t)).wait();
 }
 
 } // namespace dolfinx::experimental::sycl::algorithms
