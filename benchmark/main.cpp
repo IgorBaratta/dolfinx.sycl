@@ -14,8 +14,8 @@ using namespace dolfinx;
 
 int main(int argc, char* argv[])
 {
-  common::SubSystemsManager::init_logging(argc, argv);
-  common::SubSystemsManager::init_petsc(argc, argv);
+  common::subsystem::init_logging(argc, argv);
+  common::subsystem::init_petsc(argc, argv);
 
   MPI_Comm mpi_comm{MPI_COMM_WORLD};
 
@@ -38,7 +38,7 @@ int main(int argc, char* argv[])
   auto V = fem::create_functionspace(create_functionspace_form_poisson_a, "u",
                                      mesh);
 
-  auto f = std::make_shared<function::Function<PetscScalar>>(V);
+  auto f = std::make_shared<fem::Function<PetscScalar>>(V);
   f->interpolate([](auto& x) {
     return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
            * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
@@ -50,7 +50,7 @@ int main(int argc, char* argv[])
   auto a = dolfinx::fem::create_form<PetscScalar>(create_form_poisson_a, {V, V},
                                                   {}, {}, {});
 
-  function::Function<PetscScalar> u(V);
+  fem::Function<PetscScalar> u(V);
 
   la::PETScMatrix A = dolfinx::fem::create_matrix(*a);
   la::PETScVector b(*L->function_spaces()[0]->dofmap()->index_map,

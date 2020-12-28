@@ -74,7 +74,7 @@ void print_device_info(T device)
 
 //--------------------------------------------------------------------------
 void print_function_space_info(
-    const std::shared_ptr<dolfinx::function::FunctionSpace>& V)
+    const std::shared_ptr<dolfinx::fem::FunctionSpace>& V)
 {
   const auto& mesh = V->mesh();
   int tdim = mesh->topology().dim();

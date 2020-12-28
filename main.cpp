@@ -26,8 +26,8 @@ using namespace dolfinx::experimental::sycl;
 
 int main(int argc, char* argv[])
 {
-  common::SubSystemsManager::init_logging(argc, argv);
-  common::SubSystemsManager::init_petsc(argc, argv);
+  common::subsystem::init_logging(argc, argv);
+  common::subsystem::init_petsc(argc, argv);
 
   MPI_Comm mpi_comm{MPI_COMM_WORLD};
 
@@ -50,7 +50,7 @@ int main(int argc, char* argv[])
   auto V = fem::create_functionspace(create_functionspace_form_poisson_a, "u",
                                      mesh);
 
-  auto f = std::make_shared<function::Function<double>>(V);
+  auto f = std::make_shared<fem::Function<PetscScalar>>(V);
   f->interpolate([](auto& x) {
     return (12 * M_PI * M_PI + 1) * Eigen::cos(2 * M_PI * x.row(0))
            * Eigen::cos(2 * M_PI * x.row(1)) * Eigen::cos(2 * M_PI * x.row(2));
@@ -88,20 +88,24 @@ int main(int argc, char* argv[])
 
   auto device = queue.get_device();
   std::string executor = "omp";
+  
   if (device.is_gpu())
     executor = "cuda";
+
+
+  std::cout << "\nUsing " << executor << "executor.\n";
 
   std::int32_t nnz; // Todo: Store nnz
   queue.memcpy(&nnz, &mat.indptr[mat.nrows], sizeof(std::int32_t)).wait();
   double norm = solve::ginkgo(mat.data, mat.indptr, mat.indices, mat.nrows, nnz,
                               b, x, executor);
 
-  auto vec = f->vector();
-  double ex_norm = 0;
-  VecNorm(vec, NORM_2, &ex_norm);
+  // auto vec = f->vector();
+  // double ex_norm = 0;
+  // VecNorm(vec, NORM_2, &ex_norm);
 
-  std::cout << "\nComputed norm " << norm << "\n";
-  std::cout << "Reference norm " << ex_norm / (12 * M_PI * M_PI + 1) << "\n";
+  // std::cout << "\nComputed norm " << norm << "\n";
+  // std::cout << "Reference norm " << ex_norm / (12 * M_PI * M_PI + 1) << "\n";
 
   return 0;
 }
